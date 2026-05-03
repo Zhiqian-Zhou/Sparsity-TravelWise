@@ -1,0 +1,63 @@
+# ── Raw data (5.7 GB total — re-fetch via scripts/download_data.sh) ────────────
+Data/Italy/Raw/*.csv
+Data/Finland/Raw/*.csv
+Data/Netherlands/Raw/*.csv
+Data/Netherlands/Raw/*.parquet
+Data/Netherlands/processed/*.parquet
+Data/Netherlands/processed/.weather_cache/
+
+# Keep notebooks that ship inside Raw/ (the per-country EDA shipped by upstream)
+!Data/*/Raw/*.ipynb
+
+# ── Phase 1 outputs (regenerate via preprocess/run_all_notebooks.sh) ───────────
+Data/Italy/processed/*.csv
+Data/Finland/processed/*.csv
+Data/Netherlands/processed/*.csv
+
+# ── Phase 2 outputs (regenerate via stop_level/preprocess_stops.py) ────────────
+Data/stops/*.parquet
+Data/stops/*.npy
+Data/stops/*.json
+Data/unified_v2/*.npy
+Data/unified_v2/*.csv
+Data/unified_v2/*.json
+Data/unified_v2/*.dex
+Data/unified_v2/*.dex.log
+
+# ── Phase 3 outputs (regenerate via stop_level/train_all.py + evaluate.py) ─────
+stop_level/models/_artefacts/
+stop_level/results/*.json
+stop_level/figures/*.png
+stop_level/figures/xai/*.png
+stop_level/figures/xai/*.html
+
+# ── Phase 1 inspection figures (regenerate via the country notebooks) ──────────
+preprocess/figures/*/*.png
+preprocess/_executed/
+
+# ── Sparksee runtime artefacts ─────────────────────────────────────────────────
+sparksee.log
+
+# ── Python noise ───────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ipynb_checkpoints/
+.mypy_cache/
+.ruff_cache/
+
+# ── OS noise ───────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── IDE / editor ───────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*~
+
+# ── Local secrets / personal config ────────────────────────────────────────────
+.env
+.env.local
+.kaggle/
