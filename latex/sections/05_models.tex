@@ -3,47 +3,50 @@
 
 \subsection{Architectures}
 
-We benchmark four model families, trained twice each (scenario A pre-departure and scenario B inflight) on identical splits:
+We benchmark four model families. Each is trained twice -- once on the 37 pre-departure features (scenario~A) and once on the 40 inflight features (scenario~B) -- on identical splits and with identical class-imbalance handling. The four models span linear, tree-based and graph-neural backbones, which lets us isolate where the non-linear and graph-structural signal actually matters.
 
 \begin{enumerate}
-    \item \textbf{Logistic Regression} (\texttt{sklearn})~\cite{pedregosa2011scikit} -- balanced class weights, \texttt{saga} solver, \texttt{max\_iter}=2000. The mandatory linear baseline.
-    \item \textbf{LightGBM}~\cite{ke2017lightgbm} -- 1500 trees, \texttt{num\_leaves}=63, max depth 7, \texttt{scale\_pos\_weight} = $n_\text{neg}/n_\text{pos}$, early stopping on val PR-AUC.
-    \item \textbf{XGBoost}~\cite{chen2016xgboost} -- 1500 trees, \texttt{tree\_method='hist'}, \texttt{device='cuda'} auto-detected on a Tesla T4, \texttt{eval\_metric='aucpr'}, \texttt{early\_stopping\_rounds=50}.
-    \item \textbf{GraphSAGE}~\cite{hamilton2017inductive} -- a 2-layer SAGEConv backbone over the station adjacency graph (\num{2397} nodes, \num{163902} directed edges), feeding LayerNorm + Jumping-Knowledge concatenation, then a per-stop MLP head. PyTorch~\cite{paszke2019pytorch} and PyTorch Geometric~\cite{fey2019fast} on the T4.
+    \item \textbf{Logistic Regression}~\cite{pedregosa2011scikit}. Balanced class weights, SAGA solver, maximum 2000 iterations. Included as a strict linear baseline; any non-trivial non-linearity in the data should appear as a tree- or GNN-side gap above this.
+    \item \textbf{LightGBM}~\cite{ke2017lightgbm}. 1500 trees, 63 leaves, depth 7, scale-positive-weight tied to the train-set negative/positive ratio, early stopping on validation PR-AUC. Histogram-based splits scale linearly to tens of millions of rows on CPU.
+    \item \textbf{XGBoost}~\cite{chen2016xgboost}. 1500 trees, histogram method, GPU device auto-detected on the Tesla~T4, evaluation metric \texttt{aucpr}, early stopping after 50 stagnant rounds. Same imbalance handling as LightGBM.
+    \item \textbf{GraphSAGE}~\cite{hamilton2017inductive}. A two-layer SAGEConv backbone defined over the station adjacency graph (\num{2397} nodes, \num{163902} directed edges), with LayerNorm and a Jumping-Knowledge concatenation, feeding a per-stop MLP head. PyTorch~\cite{paszke2019pytorch} and PyTorch Geometric~\cite{fey2019fast} on the T4.
 \end{enumerate}
 
-A bidirectional / causal LSTM~\cite{schuster1997bidirectional,hochreiter1997long} variant is implemented in \texttt{stop\_level/models/bilstm\_model.py} and unit-tested at synthetic scale. We deferred it from the full benchmark: \texttt{\_pack\_sequences} materialises a \texttt{[\textit{n\_services}, \texttt{max\_stops}, $F$]} padded tensor up-front and at our scale (Netherlands alone has \num{800000}+ services with up to \num{80} stops and 40 features) the materialised tensor exceeds \SI{15}{GB}. Re-instating it requires a generator-based packer, which is out of scope for this paper.
+A bidirectional / causal LSTM~\cite{schuster1997bidirectional,hochreiter1997long} is implemented in \texttt{stop\_level/models/bilstm\_model.py} and unit-tested at synthetic scale, but we defer its full benchmark. The current packer materialises a \texttt{[n\_services, max\_stops, $F$]} tensor up front; at our scale (the Netherlands alone has more than \num{800000} services with up to 80 stops and 40 features each) that tensor is over \SI{15}{GB}. A streaming, generator-based packer would solve the memory problem; we leave it for future work.
 
-\subsection{Imbalance handling}
+\subsection{Class-imbalance handling}
 
-All four models use the same imbalance correction strategy on identical splits:
+Disruption is rare. Training on raw labels would let the model collapse to ``never disrupted'' and still record \SI{92}{\percent} accuracy. We therefore make rare-class errors expensive in every model:
+
 \begin{itemize}
-    \item Logistic Regression: \texttt{class\_weight='balanced'}.
-    \item LightGBM and XGBoost: \texttt{scale\_pos\_weight} = $n_\text{neg}/n_\text{pos}$ with \texttt{n\_neg\_pos\_ratio} computed on train.
-    \item GraphSAGE: BCE-with-logits loss with the same \texttt{pos\_weight}.
+    \item Logistic Regression uses \texttt{class\_weight='balanced'}.
+    \item LightGBM and XGBoost set \texttt{scale\_pos\_weight} to the training-set ratio of negatives to positives.
+    \item GraphSAGE uses a binary cross-entropy loss with the same positive-class weight.
 \end{itemize}
+
+Identical imbalance treatment across models lets us interpret performance gaps as architectural rather than tuning artefacts.
 
 \subsection{Decision threshold}
 
-The shared base class \texttt{StopModel.tune\_threshold(y, p)} sweeps 19 candidate thresholds in \([0.05,~0.95]\), returns the one maximising val F1, and stores it on the model. Inference uses the persisted threshold rather than a static~\num{0.5}.
+A static \num{0.5} threshold is rarely optimal under heavy imbalance. Each model inherits a \texttt{StopModel.tune\_threshold} method that sweeps 19 candidate thresholds in the interval $[0.05,~0.95]$, picks the one that maximises validation~F1, and persists it on the model. Inference uses the persisted threshold; no test-set information is involved at any point.
 
 \subsection{Training run-times}
 
-\cref{tab:train-times} reports wall-clock fit times. The T4 makes XGB and GraphSAGE the two fastest models; LightGBM scenario~B is the slowest single fit at $\sim$13~min, because the inflight features pack so much signal that the model converges to a deeper tree set before early stopping fires.
+\Cref{tab:train-times} reports wall-clock fit time for each model on each scenario. The T4 makes XGBoost and GraphSAGE the two fastest; LightGBM scenario~B is the slowest single fit, at roughly thirteen minutes, because the inflight features carry so much signal that the model converges to a deeper tree set before early stopping fires.
 
 \begin{table}[htbp]
     \centering
-    \caption{Wall-clock fit times (T4 GPU when applicable). Both scenarios use identical splits.}
+    \caption{Wall-clock fit time per (model, scenario). Both scenarios use identical splits. The LightGBM scenario-B blow-up is interpretable: with the inflight features the model can keep finding good splits, so early stopping does not engage until the tree count is much higher than in scenario~A.}
     \label{tab:train-times}
     \small
-    \begin{tabular}{lrrl}
+    \begin{tabular}{l S[table-format=4.0] S[table-format=4.0] l}
         \toprule
-        Model & Scenario A & Scenario B & Notes \\
+        Model & {Scenario A (s)} & {Scenario B (s)} & Notes \\
         \midrule
-        Logistic Regression & \SI{135}{s} & \SI{168}{s} & CPU only \\
-        LightGBM            & \SI{80}{s}  & \SI{787}{s} & CPU; B converges deeper \\
-        XGBoost             & \SI{70}{s}  & \SI{185}{s} & CUDA on T4 \\
-        GraphSAGE           & \SI{74}{s}  & \SI{134}{s} & CUDA on T4 \\
+        Logistic Regression & 135 & 168 & CPU only \\
+        LightGBM            &  80 & 787 & CPU; B converges deeper \\
+        XGBoost             &  70 & 185 & CUDA on T4 \\
+        GraphSAGE           &  74 & 134 & CUDA on T4 \\
         \bottomrule
     \end{tabular}
 \end{table}

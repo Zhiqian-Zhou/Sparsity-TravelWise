@@ -1,9 +1,15 @@
-\section{Knowledge Graph integration}
+\section{Knowledge graph integration}
 \label{sec:kg}
+
+\subsection{Why a graph at all?}
+
+The four-model benchmark and the SHAP report deliver per-row probabilities and per-row attributions. Both are useful but neither answers the question an operations analyst will ask next: \emph{why is this stop on the high-risk list?} Answering it requires the surrounding context -- the station's reliability history, recent fault reports, the immediate neighbours on the network. That context is graph-shaped: services connect to stations, stations connect to stations, fault events connect to stations. We therefore promote the Phase~1/2 outputs to a queryable graph database and define a single bridge query that takes a $(\texttt{service\_id}, \texttt{station\_id}, \texttt{date})$ triple from the SHAP report and returns the surrounding spatial-temporal neighbourhood.
 
 \subsection{Schema and backend}
 
-The Phase 1/2 outputs already carry node and edge structure (\texttt{nodes\_station}, \texttt{nodes\_service}, \texttt{edges\_stops\_at}, \texttt{edges\_adjacent}, \texttt{nodes\_fault}). We promote them to a queryable graph database. The chosen backend is \textbf{Sparksee 5.2.3}~\cite{sparksee2024,martinez2017dex}, sourced from Maven Central (\texttt{com.sparsity:sparkseejava:5.2.3}); the jar bundles the Linux x86\_64 native libraries (\texttt{libsparksee.so}, \texttt{libsparkseejavawrap.so}, \texttt{libstlport.so}). We drive the JVM-side API from Python via JPype1 -- no system-level Java install is required because \texttt{scripts/install\_sparksee.sh} drops a portable Eclipse Temurin~17 JDK into \texttt{.tools/}. The schema is shown in \cref{lst:kg-schema}; the same DDL is portable to any labelled-property graph (Kuzu, Neo4j, Sparksee).
+The chosen backend is Sparksee~5.2.3~\cite{sparksee2024,martinez2017dex}, sourced from Maven Central as \texttt{com.sparsity:sparkseejava:5.2.3}. The published jar already bundles the Linux x86\_64 native libraries (\texttt{libsparksee.so}, \texttt{libsparkseejavawrap.so}, \texttt{libstlport.so}); we drive the JVM-side API from Python via JPype1. The repository ships a one-shell-command installer (\texttt{scripts/install\_sparksee.sh}) that downloads the jar and a portable Eclipse Temurin~17 JDK into a project-local \texttt{.tools/} directory, so neither a Sparksee account nor a system-level Java install is required.
+
+The schema uses three node types and three edge types. \Cref{lst:kg-schema} expresses it as Cypher DDL, the canonical portable description; the actual Sparksee build creates the same structure through the equivalent native API calls (\texttt{Graph.newNodeType}, \texttt{Graph.newEdgeType}, \texttt{Graph.newAttribute}).
 
 \begin{figure}[htbp]
 \begin{lstlisting}[language=Cypher]
@@ -31,43 +37,43 @@ CREATE REL TABLE STOPS_AT(
 CREATE REL TABLE ADJACENT_TO(FROM Station TO Station, distance_km DOUBLE);
 CREATE REL TABLE REPORTED_AT(FROM FaultEvent TO Station);
 \end{lstlisting}
-\caption{KG schema (Cypher DDL — the canonical, portable description). The Sparksee 5.2.3 backend creates the three node types and three edge types via the equivalent native API (\texttt{Graph.newNodeType}, \texttt{Graph.newEdgeType}, \texttt{Graph.newAttribute}) -- semantically identical, only the driver call sites differ.}
+\caption{Knowledge-graph schema in Cypher DDL (the portable description). Three node types and three edge types. The Sparksee~5.2.3 backend creates the same structure through the equivalent native-API calls; only the driver call sites differ.}
 \label{lst:kg-schema}
 \end{figure}
 
-\subsection{Build statistics}
+\subsection{Build statistics and the evaluation-mode cap}
 
-The Maven Central jar runs Sparksee in \emph{personal evaluation} mode unless the project's \texttt{sparksee.cfg} ships a licence string; eval mode caps each edge type at \SI{1}{M} edges. The full \texttt{STOPS\_AT} relation has \SI{16.59}{M} rows, so the build script auto-falls back to a representative \emph{hub subgraph} centred on the SHAP demo station \texttt{FI\_HKH}: every service that visits the hub or any of its 1-hop neighbours, plus the corresponding \texttt{STOPS\_AT}, \texttt{ADJACENT\_TO} and \texttt{REPORTED\_AT} edges. Holders of an academic / commercial licence can re-run with their licence string and load the full graph. \Cref{tab:kg-build} reports build wall-clock for the eval-mode hub subgraph on a Tesla~T4 / 4-core CPU box.
+The Maven Central jar runs Sparksee in \emph{personal evaluation} mode unless a licence string is provided in \texttt{sparksee.cfg}. Evaluation mode caps each edge type at one million edges. The full \texttt{STOPS\_AT} relation contains \num{16586834} edges, well above that cap, so the build script automatically falls back to a representative \emph{hub subgraph} centred on the SHAP demo station \texttt{FI\_HKH}: every service that visits the hub or any of its 1-hop adjacent stations, together with the corresponding \texttt{STOPS\_AT}, \texttt{ADJACENT\_TO} and \texttt{REPORTED\_AT} edges. Holders of an academic or commercial Sparksee licence can drop their licence string into \texttt{sparksee.cfg} and re-run with the same code path to load the full \num{16.59}\,M-edge graph. \Cref{tab:kg-build} reports build wall-clock for the eval-mode hub subgraph on a Tesla~T4 / 4-core CPU box.
 
 \begin{table}[htbp]
     \centering
-    \caption{Sparksee 5.2.3 build statistics for the FI\_HKH hub subgraph on a Tesla~T4 / 4-core CPU box. JPype CRUD inserts at $\sim$\SI{18}{K} edges/s (single-threaded native API; the bulk \texttt{TypeLoader} would be faster but isn't reached here because the eval-mode cap binds first). Stage time is shared with the parquet feature store.}
+    \caption{Sparksee~5.2.3 build statistics for the FI\_HKH hub subgraph (Tesla~T4, 4-core CPU). Per-row inserts via JPype run at roughly 18\,K edges per second on the single-threaded native API. Sparksee's bulk \texttt{TypeLoader} is faster but is not reached here because the eval-mode cap binds first. ``Stage parquets'' shares its wall-clock with the parquet feature store, so it is amortised across the rest of the pipeline.}
     \label{tab:kg-build}
     \small
-    \begin{tabular}{lrr}
+    \begin{tabular}{l l S[table-format=8.0,group-separator={,}]}
         \toprule
-        Step & Time & Rows \\
+        Step & Wall-clock & {Rows} \\
         \midrule
-        Stage parquets (5 inputs concat + dedupe)        & $\sim$\SI{6}{min} & 16.59~M rows total \\
-        Hub-subgraph trim (\texttt{station\_id} $\in$ FI\_HKH $\cup$ neighbours) & \SI{3}{s} & --- \\
-        Schema creation (3 node + 3 edge types)          & \SI{0.1}{s} & --- \\
-        \texttt{Station}            & \SI{0.0}{s}  & 3 \\
-        \texttt{TrainService}       & \SI{1.0}{s}  & 16,434 \\
-        \texttt{FaultEvent}         & \SI{0.0}{s}  & 0 \\
-        \texttt{STOPS\_AT}          & \SI{5.6}{s} & 98,508 (\SI{18}{K}/s) \\
+        Stage parquets (5 inputs concatenated and deduplicated) & $\sim$\SI{6}{min} & 16586834 \\
+        Hub-subgraph trim (\texttt{station\_id} $\in$ FI\_HKH $\cup$ neighbours) & \SI{3}{s} &  \\
+        Schema creation (3 node + 3 edge types)        & \SI{0.1}{s} &  \\
+        \texttt{Station}            & \SI{0.0}{s} & 3 \\
+        \texttt{TrainService}       & \SI{1.0}{s} & 16434 \\
+        \texttt{FaultEvent}         & \SI{0.0}{s} & 0 \\
+        \texttt{STOPS\_AT}          & \SI{5.6}{s} & 98508 \\
         \texttt{ADJACENT\_TO}       & \SI{0.0}{s} & 4 \\
         \texttt{REPORTED\_AT}       & \SI{0.0}{s} & 0 \\
         \midrule
-        \textbf{Total Sparksee load} & $\sim$\textbf{7~s} & 98.5~K edges + 16.4~K nodes \\
+        \textbf{Total Sparksee load} & $\sim$\textbf{7\,s} & 114946 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-The on-disk \texttt{railway.gdb} file is~\SI{11}{MB} (hub subgraph) plus a \SI{640}{KB} OID index map.
+The on-disk \texttt{railway.gdb} file is \SI{11}{MB} for the hub subgraph, with an additional \SI{640}{KB} for the OID index map.
 
-\subsection{Bridge query: closing the loop from SHAP to KG}
+\subsection{Bridge query: closing the loop from SHAP to context}
 
-The full point of the Knowledge Graph is to translate a \emph{black-box probability} into a \emph{queryable spatial-temporal neighbourhood}. After the SHAP report flags a high-risk stop, the analyst plugs $(\texttt{service\_id}, \texttt{station\_id}, \texttt{date})$ into the bridge query. \Cref{lst:kg-bridge} shows the canonical Cypher form (portable to Kuzu / Neo4j / Sparksee~6+ OpenCypher); \texttt{stop\_level/build\_kg.py::run\_bridge\_demo} implements an exactly-equivalent native-API translation against Sparksee 5.2.3 using \texttt{Graph.findEdge}, \texttt{Graph.explode} and \texttt{Graph.neighbors}.
+The point of the graph is to translate a black-box probability into a queryable spatial-temporal neighbourhood. After the SHAP report flags a high-risk stop, the analyst plugs $(\texttt{service\_id}, \texttt{station\_id}, \texttt{date})$ into the bridge query. \Cref{lst:kg-bridge} shows the canonical Cypher form (portable to Kuzu, Neo4j, or Sparksee~6+ OpenCypher); \texttt{stop\_level/build\_kg.py::run\_bridge\_demo} implements an exactly equivalent native-API translation against Sparksee~5.2.3 using \texttt{Graph.findEdge}, \texttt{Graph.explode} and \texttt{Graph.neighbors}.
 
 \begin{figure}[htbp]
 \begin{lstlisting}[language=Cypher]
@@ -86,11 +92,11 @@ RETURN
   count(DISTINCT nbr)    AS n_neighbours,
   collect(DISTINCT nbr.station_id) AS all_neighbours
 \end{lstlisting}
-\caption{KG bridge query: takes a SHAP-flagged $(\texttt{service\_id}, \texttt{station\_id}, \texttt{date})$ triple and returns the surrounding spatial-temporal context: recent faults, neighbouring stations, the actual stop delay and weather.}
+\caption{The bridge query in canonical Cypher form. It takes a SHAP-flagged $(\texttt{service\_id}, \texttt{station\_id}, \texttt{date})$ triple and returns the surrounding spatial-temporal context: this stop's actual delay and weather, recent fault events at this station, and the 1-hop adjacent stations.}
 \label{lst:kg-bridge}
 \end{figure}
 
-\paragraph{Live demo.} For the highest-confidence true-positive disruption from \texttt{xgb/B} (service \texttt{FI\_28\_2024-06-30} stopping at \texttt{FI\_HKH} on \texttt{2024-06-30}, $p=1.000$), the bridge query returns \cref{lst:kg-result} in \SI{7.7}{ms} on Sparksee 5.2.3 (vs the original Cypher form's \SI{52}{ms} on Kuzu) -- direct \texttt{findEdge} avoids the explode-and-filter pattern Cypher's planner falls back to.
+\paragraph{Live demo.} For the highest-confidence true-positive disruption from the scenario-B XGBoost model -- service \texttt{FI\_28\_2024-06-30} stopping at \texttt{FI\_HKH} on \texttt{2024-06-30}, predicted with $p=1.000$ -- the native-API bridge query returns the result in \cref{lst:kg-result} in \SI{7.7}{ms}. The same query expressed as Cypher and executed by Kuzu's planner takes \SI{52}{ms}; Sparksee's direct \texttt{findEdge} call avoids the explode-and-filter pattern Cypher's planner falls back to.
 
 \begin{figure}[htbp]
 \begin{lstlisting}
@@ -117,4 +123,4 @@ source scripts/install_sparksee.sh
 python stop_level/build_kg.py --rebuild
 \end{lstlisting}
 
-\paragraph{Licence tier.} The repo ships a \texttt{sparksee.cfg.example} with cache + storage tuning but no licence string. Holders of an academic / commercial Sparksee licence can copy it to \texttt{sparksee.cfg} and add their \texttt{sparksee.license = ...} line; the build then loads the full \SI{16.59}{M}-edge graph. Without a licence, the script auto-degrades to the FI\_HKH hub subgraph reported in \cref{tab:kg-build} -- still enough to demonstrate the bridge query end-to-end.
+\paragraph{Licence tier.} The repository ships \texttt{sparksee.cfg.example} with cache and storage tuning but no licence string. Holders of an academic or commercial Sparksee licence can copy it to \texttt{sparksee.cfg} and add their \texttt{sparksee.license = ...} line; the build then loads the full \num{16586834}-edge graph through the same code path. Without a licence, the script auto-degrades to the FI\_HKH hub subgraph reported in \cref{tab:kg-build}, which is still enough to demonstrate the bridge query end to end.
