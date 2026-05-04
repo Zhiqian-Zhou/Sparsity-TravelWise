@@ -100,33 +100,33 @@
 The full pipeline is reproducible from a fresh checkout in three shell commands. Total wall-clock time on a 4-core CPU plus Tesla~T4 box is approximately 2.5 hours; the 32-test pytest suite runs in 25 seconds.
 
 \begin{verbatim}
-# Phase 0 — install Python dependencies (one-time)
+# Phase 0 -- install Python dependencies (one-time)
 pip install pandas numpy scikit-learn lightgbm xgboost shap matplotlib seaborn \
             pyarrow networkx jupyter papermill nbconvert torch torch_geometric \
             openmeteo-requests requests-cache retry-requests kaggle pytest \
             jpype1 install-jdk
 
-# Phase 0a — install Sparksee 5.2.3 (Maven Central jar) + portable Temurin JDK
+# Phase 0a -- install Sparksee 5.2.3 (Maven Central jar) + portable Temurin JDK
 source scripts/install_sparksee.sh
 
-# Phase 0b — download raw data (one-time, ~5.7 GB)
+# Phase 0b -- download raw data (one-time, ~5.7 GB)
 bash scripts/download_data.sh
 
-# Phase 1 — country preprocessing
+# Phase 1 -- country preprocessing
 bash preprocess/run_all_notebooks.sh
 
-# Phase 2 — unified stop-level preprocessing
+# Phase 2 -- unified stop-level preprocessing
 python stop_level/preprocess_stops.py
 
-# Phase 3 — train + evaluate the four model families
+# Phase 3 -- train + evaluate the four model families
 python stop_level/train_all.py --model logreg lgbm xgb graphsage --scenario both
 python stop_level/evaluate.py
 python stop_level/xai_stops.py --scenario both
 
-# Phase 4 — Knowledge graph (Sparksee 5.2.3)
+# Phase 4 -- Knowledge graph (Sparksee 5.2.3)
 python stop_level/build_kg.py --rebuild
 
-# Phase 5 — cause-of-disruption prediction
+# Phase 5 -- cause-of-disruption prediction
 python stop_level/cause_prediction.py        # v1
 python stop_level/cause_prediction_v2.py     # v2 (improved)
 
