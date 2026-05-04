@@ -6,7 +6,7 @@
 The Phase 1/2 outputs already carry node and edge structure (\texttt{nodes\_station}, \texttt{nodes\_service}, \texttt{edges\_stops\_at}, \texttt{edges\_adjacent}, \texttt{nodes\_fault}). We promote them to a queryable graph database. The original target backend was \textbf{Sparksee}~\cite{sparksee2024,martinez2017dex} -- the project ships a valid licence file -- but Sparksee's binary distribution is gated behind a registered-user download we cannot reach from the build environment. We therefore use \textbf{Kuzu}~\cite{feng2023kuzu}, an embedded Cypher-native graph database that is pip-installable, Python-3 native, and supports Cypher queries that are \emph{byte-identical-portable} to Sparksee. The full schema is shown in \cref{lst:kg-schema}.
 
 \begin{figure}[htbp]
-\begin{minted}[fontsize=\small,frame=single,framesep=2mm,bgcolor=gray!5]{cypher}
+\begin{lstlisting}[language=Cypher]
 CREATE NODE TABLE Station(
     station_id            STRING,
     country               STRING,
@@ -30,7 +30,7 @@ CREATE REL TABLE STOPS_AT(
     precipitation DOUBLE, snow_depth DOUBLE);
 CREATE REL TABLE ADJACENT_TO(FROM Station TO Station, distance_km DOUBLE);
 CREATE REL TABLE REPORTED_AT(FROM FaultEvent TO Station);
-\end{minted}
+\end{lstlisting}
 \caption{KG schema (Cypher DDL). Three node tables, three relationship tables. Identical between Kuzu and Sparksee.}
 \label{lst:kg-schema}
 \end{figure}
@@ -66,7 +66,7 @@ The on-disk database is~\SI{809}{MB} -- larger than the~\SI{269}{MB} parquet fea
 The full point of the Knowledge Graph is to translate a \emph{black-box probability} into a \emph{queryable spatial-temporal neighbourhood}. After the SHAP report flags a high-risk stop, the analyst plugs $(\texttt{service\_id}, \texttt{station\_id}, \texttt{date})$ into \cref{lst:kg-bridge}.
 
 \begin{figure}[htbp]
-\begin{minted}[fontsize=\small,frame=single,framesep=2mm,bgcolor=gray!5]{cypher}
+\begin{lstlisting}[language=Cypher]
 MATCH (svc:TrainService {service_id: $sid})-[stop:STOPS_AT]->(st:Station {station_id: $stid})
 OPTIONAL MATCH (f:FaultEvent)-[:REPORTED_AT]->(st)
   WHERE f.date >= date($d) - INTERVAL('14 days') AND f.date <= date($d)
@@ -81,7 +81,7 @@ RETURN
   count(DISTINCT f)      AS recent_faults_14d,
   count(DISTINCT nbr)    AS n_neighbours,
   collect(DISTINCT nbr.station_id) AS all_neighbours
-\end{minted}
+\end{lstlisting}
 \caption{KG bridge query: takes a SHAP-flagged $(\texttt{service\_id}, \texttt{station\_id}, \texttt{date})$ triple and returns the surrounding spatial-temporal context: recent faults, neighbouring stations, the actual stop delay and weather.}
 \label{lst:kg-bridge}
 \end{figure}
@@ -89,7 +89,7 @@ RETURN
 \paragraph{Live demo.} For the highest-confidence true-positive disruption from \texttt{xgb/B}, the bridge query returns \cref{lst:kg-result} in \SI{52}{ms}.
 
 \begin{figure}[htbp]
-\begin{minted}[fontsize=\small,frame=single,framesep=2mm,bgcolor=gray!5]{json}
+\begin{lstlisting}
 {
   "station": "FI_HKH",       "country": "FI",
   "station_avg_delay": 6.84, "degree": 213,
@@ -97,7 +97,7 @@ RETURN
   "recent_faults_14d": 0,    "n_neighbours": 2,
   "sample_neighbours": ["FI_HVK", "FI_TKL"]
 }
-\end{minted}
+\end{lstlisting}
 \caption{Bridge-query result for service \texttt{FI\_28\_2024-06-30} at station \texttt{FI\_HKH} on \texttt{2024-06-30}. The SHAP top driver \texttt{prev\_stop\_actual\_delay} is matched here by the actual \SI{36}{min} delay; \texttt{degree=213} confirms FI\_HKH is a hub.}
 \label{lst:kg-result}
 \end{figure}
