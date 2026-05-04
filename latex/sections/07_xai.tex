@@ -1,0 +1,103 @@
+\section{SHAP explainability}
+\label{sec:xai}
+
+\subsection{Setup}
+
+We pick the strongest tabular model per scenario by test PR-AUC -- XGBoost wins both -- and run \emph{TreeSHAP}~\cite{lundberg2017unified,lundberg2020local} on the \emph{full} 2.30~M-row test set, not a sample. SHAP value tensors of shape $(2{,}303{,}236 \times F)$ are persisted as \texttt{shap\_values.npy} immediately after compute. The whole Phase~4 pipeline (both scenarios + retrains for ablation + 14 figures) runs in $\sim$34 minutes.
+
+\subsection{Global feature importance}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{stop_level/xai/global_summary_bar_A.png}
+        \caption{Scenario A.}
+    \end{subfigure}\hfill
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{stop_level/xai/global_summary_bar_B.png}
+        \caption{Scenario B.}
+    \end{subfigure}
+    \caption{Top-20 global feature importance, mean $|\text{SHAP}|$ per feature. In~A (pre-departure) the strongest signal is \texttt{train\_station\_lag7\_rate} (the 7-day rolling reliability of \emph{this} train at \emph{this} station). In~B (inflight) \texttt{prev\_stop\_actual\_delay} dominates by a factor of $\sim$2.4 over the next feature.}
+    \label{fig:global-bar}
+\end{figure}
+
+The pre-departure model relies most on \emph{historical reliability of this specific (train, station) pair}: \texttt{train\_station\_lag7\_rate} = \num{1.048} mean $|\text{SHAP}|$, followed by \texttt{avg\_historical\_delay} (\num{0.616}), \texttt{stop\_order} (\num{0.245}), \texttt{cum\_distance\_km} (\num{0.160}) and \texttt{temperature} (\num{0.156}). The inflight model is dominated by \texttt{prev\_stop\_actual\_delay} (\num{2.547}) -- nearly $2.4\times$ the next strongest feature.
+
+\cref{fig:beeswarm} shows the per-row SHAP distributions coloured by feature value. The scenario-B \texttt{prev\_stop\_actual\_delay} row spans \([-2,~+9]\) SHAP units with red (high) values clearly pushing the prediction strongly toward ``disrupted'' -- the textbook ``inflight cliff''.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{stop_level/xai/global_summary_beeswarm_A.png}
+        \caption{Scenario A.}
+    \end{subfigure}\hfill
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{stop_level/xai/global_summary_beeswarm_B.png}
+        \caption{Scenario B.}
+    \end{subfigure}
+    \caption{SHAP beeswarm: each dot is one test stop; horizontal position is the SHAP value (impact on the log-odds of disruption); colour encodes feature value (red high, blue low).}
+    \label{fig:beeswarm}
+\end{figure}
+
+\subsection{Lag-feature ablation}
+
+The lag-feature ablation re-fits the winning model with all \texttt{*\_lag*} and inflight features removed (keeping only static, weather and position). The PR-AUC drops:
+
+\begin{table}[htbp]
+    \centering
+    \caption{Lag-feature ablation. The lag and inflight features carry virtually all the test-set signal in scenario~B.}
+    \label{tab:lag-ablation}
+    \small
+    \begin{tabular}{lrrr}
+        \toprule
+        Scenario & PR-AUC (full) & PR-AUC (no lag) & $\Delta$ \\
+        \midrule
+        A & 0.552 & 0.355 & $+\,0.197$ \\
+        B & 0.952 & 0.355 & $+\,0.597$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\Cref{fig:lag-ablation} visualises the bar drop. Without lag features, both scenarios collapse to the same \num{0.355} baseline -- a static-features-only model that's barely better than the disruption rate. The whole A$\to$B uplift is carried by lag and inflight features.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{stop_level/xai/lag_ablation.png}
+    \caption{Lag ablation, scenario~B: without lag and inflight features the model loses \num{0.597} PR-AUC.}
+    \label{fig:lag-ablation}
+\end{figure}
+
+\subsection{Local explanations}
+
+We pick four prototypical rows from the test set -- highest-confidence true positive, worst false negative, confident false positive, and the row where the A$\leftrightarrow$B prediction flipped most dramatically -- and produce SHAP waterfall plots (\cref{fig:waterfalls}). The TP plot for service \texttt{FI\_28\_2024-06-30} at station \texttt{FI\_HKH} shows \texttt{prev\_stop\_actual\_delay}=35\,min contributing $+8.43$ SHAP units alone, dwarfing every other feature. The model correctly predicts disruption with $p=1.000$.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{stop_level/xai/local_waterfall_tp.png}
+        \caption{Highest-confidence TP.}
+    \end{subfigure}\hfill
+    \begin{subfigure}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{stop_level/xai/local_waterfall_AB_flip.png}
+        \caption{A$\leftrightarrow$B prediction flip.}
+    \end{subfigure}
+    \caption{SHAP waterfalls for two prototypical test rows. Additional FP and FN waterfalls in the appendix.}
+    \label{fig:waterfalls}
+\end{figure}
+
+\subsection{Scenario uplift across stop positions}
+
+The scenario uplift map (\cref{fig:uplift}) plots $P_B - P_A$ per row against \texttt{position\_norm}. Mean uplift = $-\num{0.115}$: counter-intuitively, scenario~B \emph{lowers} most predictions because it is much more selective. Scenario~A over-predicts (more false positives); scenario~B uses the inflight signal to rule them out. The uplift is more negative for late-route positions (\texttt{position\_norm}~$>$~0.75) where the inflight evidence is most informative.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{stop_level/xai/scenario_uplift_map.png}
+    \caption{$P_B - P_A$ per test row vs.\ \texttt{position\_norm}. Negative uplift means B is more selective than A. Mean uplift = $-\num{0.115}$.}
+    \label{fig:uplift}
+\end{figure}

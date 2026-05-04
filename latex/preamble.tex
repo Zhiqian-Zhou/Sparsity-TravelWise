@@ -1,0 +1,81 @@
+% latex/preamble.tex
+% Modern applied-ML paper preamble
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+
+% Math
+\usepackage{amsmath, amssymb, amsfonts, mathtools}
+
+% Figures + subfigures
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{caption}
+\captionsetup[figure]{font=small, labelfont=bold, justification=raggedright,
+                       singlelinecheck=false}
+\captionsetup[table]{font=small, labelfont=bold, justification=raggedright,
+                      singlelinecheck=false}
+
+% Tables
+\usepackage{booktabs}
+\usepackage{array, multirow, makecell, tabularx}
+\usepackage{siunitx}
+\sisetup{detect-weight=true,
+          group-separator={,}, group-minimum-digits=4}
+
+% SI units & numerical formatting
+\sisetup{round-mode=places, round-precision=3}
+
+% Code listings (graceful fallback if minted/pygments not available)
+\IfFileExists{minted.sty}{%
+  \usepackage[cache=false]{minted}
+  \setminted{fontsize=\small, breaklines=true, frame=single, framesep=2mm,
+              bgcolor=gray!5}
+}{%
+  \usepackage{listings}
+  \lstset{language=Python, breaklines=true, basicstyle=\ttfamily\small,
+           keywordstyle=\color{blue}, commentstyle=\color{gray},
+           frame=single, numbers=left, numberstyle=\tiny\color{gray}}
+}
+
+% Algorithms
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% Bibliography (biblatex with bibtex backend — biber not available in our minimal TL install)
+\usepackage[style=numeric, backend=bibtex, sorting=none, maxbibnames=20]{biblatex}
+\addbibresource{references.bib}
+
+% Hyperlinks (load before cleveref)
+\usepackage[colorlinks=true, linkcolor=blue!60!black,
+            citecolor=blue!60!black, urlcolor=blue!60!black]{hyperref}
+\usepackage[capitalise, noabbrev]{cleveref}
+
+% Misc
+\usepackage{xcolor}
+\usepackage{enumitem}
+\setlist{nosep}
+\usepackage{parskip}
+\usepackage{textcomp}
+\usepackage{rotating}
+
+% Custom math operators
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+
+% Header / footer
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Stop-level disruption prediction across IT/FI/NL}
+\fancyhead[R]{\small \thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% Graphics paths so figures pull from the symlinked dirs
+\graphicspath{{./preprocessing/}{./stop_level/}{./figures/}}

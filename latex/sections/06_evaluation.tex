@@ -1,0 +1,95 @@
+\section{Evaluation}
+\label{sec:evaluation}
+
+\subsection{Headline metrics}
+
+All eight \emph{(model, scenario)} combinations are evaluated on the held-out 2.30~M-row test set (June 2024). \cref{tab:headline-metrics} summarises the headline metrics; \cref{fig:metrics-summary,fig:pr-roc} display the per-metric and per-curve breakdowns.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Test-set metrics for the eight (model, scenario) combinations. PR-AUC and F1 reported; XGB wins both scenarios.}
+    \label{tab:headline-metrics}
+    \small
+    \begin{tabular}{l rr rr c}
+        \toprule
+        & \multicolumn{2}{c}{Scenario A (pre-departure)} & \multicolumn{2}{c}{Scenario B (inflight)} & \\
+        \cmidrule(lr){2-3}\cmidrule(lr){4-5}
+        Model & PR-AUC & F1 & PR-AUC & F1 & A$\to$B uplift \\
+        \midrule
+        Logistic Regression & 0.280 & 0.352 & 0.541 & 0.546 & +0.261 \\
+        LightGBM            & 0.520 & 0.525 & 0.951 & 0.903 & +0.431 \\
+        \textbf{XGBoost}    & \textbf{0.552} & \textbf{0.530} & \textbf{0.952} & \textbf{0.906} & +0.400 \\
+        GraphSAGE           & 0.520 & 0.518 & 0.921 & 0.891 & +0.401 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{stop_level/metrics_summary_A.png}
+        \caption{Scenario A (pre-departure).}
+    \end{subfigure}\hfill
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{stop_level/metrics_summary_B.png}
+        \caption{Scenario B (inflight).}
+    \end{subfigure}
+    \caption{Per-model PR-AUC, F1, precision and recall on the held-out test set.}
+    \label{fig:metrics-summary}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{stop_level/pr_roc_grid.png}
+    \caption{ROC curves (left column) and PR curves (right column) for all four models on each scenario. Scenario B's PR curves hug the top-right corner; the dramatic A$\to$B PR-AUC jump (0.52$\to$0.95) is visible at a glance.}
+    \label{fig:pr-roc}
+\end{figure}
+
+\subsection{Calibration}
+
+Reliability diagrams (\cref{fig:calibration}) show that LightGBM and XGBoost are well calibrated in scenario~B (close to the diagonal), whereas Logistic Regression is the worst on both scenarios. ECE (10-bin quantile) is reported in the benchmark JSON: \num{0.0430} for XGB/B vs \num{0.3188} for LogReg/B.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{stop_level/calibration_grid.png}
+    \caption{Reliability diagrams (predicted vs empirical fraction). XGB and LightGBM in B follow the perfect-calibration diagonal closely; LogReg is dramatically over-confident at high probability bins.}
+    \label{fig:calibration}
+\end{figure}
+
+\subsection{Per-country, per-position, per-train-class breakdowns}
+
+Performance varies sharply by country: XGB/B reaches PR-AUC \num{0.989} on Finland (495K test rows), \num{0.858} on the Netherlands (1.79~M rows) and \num{0.788} on Italy (21K rows). \cref{fig:per-country,fig:per-position,fig:per-class} show the full breakdowns.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{stop_level/per_country_metrics.png}
+    \caption{PR-AUC by country, faceted by scenario. Finland's small station count and high disruption rate make the per-station lag features very informative there; Italy is the hardest target.}
+    \label{fig:per-country}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{stop_level/per_position_metrics.png}
+    \caption{PR-AUC by stop position quartile. Pre-departure (A) is uniformly hardest near the origin (less history); inflight (B) is essentially flat -- the prior-stop signal dominates regardless of position.}
+    \label{fig:per-position}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{stop_level/per_train_class_metrics.png}
+    \caption{PR-AUC by train class (0~Local~$\to$~5~Ultra-HS).}
+    \label{fig:per-class}
+\end{figure}
+
+\subsection{Cascading respect}
+
+A diagnostic specific to scenario B asks: \emph{does the model actually use its inflight signal?} For each model we compute $P(\text{predicted}\mid\text{prev stop late})$ vs $P(\text{predicted}\mid\text{prev stop on time})$. A meaningful gap demonstrates the model is reading the cascading delay. \cref{fig:cascading} shows that the three tree-based models cluster near $\sim$\num{0.97} in the late condition vs $\sim$\num{0.05} in the on-time condition; LogReg shows a softer gap (\num{0.65} vs \num{0.05}).
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{stop_level/cascading_respect.png}
+    \caption{Scenario~B only: $P(\text{predicted disrupted}\mid\text{prev stop late})$ vs $P(\text{predicted disrupted}\mid\text{prev stop on time})$. Tree models show a~$\sim$0.95 gap; LogReg is softer.}
+    \label{fig:cascading}
+\end{figure}

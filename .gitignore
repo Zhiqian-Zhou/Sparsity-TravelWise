@@ -61,3 +61,33 @@ Thumbs.db
 .env
 .env.local
 .kaggle/
+
+# ── Sparksee licence (do NOT commit publicly) ──────────────────────────────────
+sparksee.cfg
+
+# ── Claude Code internal state ─────────────────────────────────────────────────
+.claude/
+
+# ── Phase 5/6 outputs (large, derived) ─────────────────────────────────────────
+Data/kg/
+Data/causes/
+Data/Italy/processed_synthetic_backup/
+Data/Netherlands/_om_cache/
+
+# ── Notebooks executed by papermill ────────────────────────────────────────────
+preprocess/_executed/
+
+# ── LaTeX build artefacts ──────────────────────────────────────────────────────
+latex/*.aux
+latex/*.bbl
+latex/*.blg
+latex/*.log
+latex/*.out
+latex/*.toc
+latex/main.pdf
+
+# Override: allow inspection figures to be committed (referenced by docs/*.md and latex/*.tex)
+!preprocess/figures/
+!preprocess/figures/**/*.png
+!stop_level/figures/
+!stop_level/figures/**/*.png
