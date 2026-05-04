@@ -3,7 +3,7 @@ Bake all dashboard JSON files from the existing pipeline outputs.
 Run from repo root:  python docs/website/bake_data.py
 """
 from __future__ import annotations
-import json, sys
+import json, math, sys
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -11,6 +11,41 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 OUT  = Path(__file__).resolve().parent / "data"
 OUT.mkdir(parents=True, exist_ok=True)
+
+
+# ── JSON-safe helpers ─────────────────────────────────────────────────────────
+# Pandas `to_json(orient='records')` and the json module both emit bare `NaN`
+# tokens for float NaN/Inf, which is INVALID JSON. JavaScript's JSON.parse
+# rejects them and the dashboard crashes. We sanitise to `null` before write.
+def _clean_value(v):
+    if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+        return None
+    if isinstance(v, np.floating):
+        f = float(v)
+        return None if (math.isnan(f) or math.isinf(f)) else f
+    if isinstance(v, np.integer):
+        return int(v)
+    if isinstance(v, np.ndarray):
+        return [_clean_value(x) for x in v.tolist()]
+    if isinstance(v, (list, tuple)):
+        return [_clean_value(x) for x in v]
+    if isinstance(v, dict):
+        return {k: _clean_value(x) for k, x in v.items()}
+    return v
+
+def _records_safe(df: pd.DataFrame) -> list:
+    """DataFrame → list of dicts with all NaN/Inf replaced by None."""
+    out = []
+    for r in df.to_dict("records"):
+        out.append({k: _clean_value(v) for k, v in r.items()})
+    return out
+
+def write_json(path, data, indent=None):
+    """Always-valid JSON writer (NaN → null)."""
+    Path(path).write_text(
+        json.dumps(_clean_value(data), default=str,
+                    allow_nan=False, indent=indent)
+    )
 
 
 # ── 1. Headline metrics + per-country/per-position breakdown ──────────────────
@@ -43,7 +78,7 @@ for r in b["runs"]:
         out["by_country"]     = r.get("by_country", {})
         out["by_position"]    = r.get("by_position", {})
         out["by_train_class"] = r.get("by_train_class", {})
-(OUT / "benchmark.json").write_text(json.dumps(out, indent=2, default=str))
+write_json(OUT / "benchmark.json", out, indent=2)
 
 
 # ── 2. SHAP top-features (A and B) ────────────────────────────────────────────
@@ -65,7 +100,7 @@ for s, sc in x["scenarios"].items():
         "local_explanations": sc.get("local_explanations", {}),
         "base_value": sc.get("base_value"),
     }
-(OUT / "xai.json").write_text(json.dumps(xai, indent=2, default=str))
+write_json(OUT / "xai.json", xai, indent=2)
 
 
 # ── 3. Cause prediction v1 vs v2 ──────────────────────────────────────────────
@@ -95,7 +130,7 @@ causes = {
         "transfer": v2_t["by_country"],
     },
 }
-(OUT / "causes.json").write_text(json.dumps(causes, indent=2, default=str))
+write_json(OUT / "causes.json", causes, indent=2)
 
 
 # ── 4. Stations: lat/lon + degree + avg_delay (full set, lightly filtered) ────
@@ -152,7 +187,7 @@ for _, row in sta.iterrows():
     })
 print(f"  domestic per country: {n_dom}")
 print(f"  international cross-border per country: {n_intl}")
-(OUT / "stations.json").write_text(json.dumps(sta_out))
+write_json(OUT / "stations.json", sta_out)
 
 # Counts of stations missing coords entirely (so the UI can surface this honestly)
 n_missing = {}
@@ -163,12 +198,12 @@ for c in ("IT", "FI", "NL"):
         df_c = pd.read_csv(p)
         n_missing[c] = int(df_c[["lat", "lon"]].isna().any(axis=1).sum())
 print(f"  stations missing lat/lon entirely: {n_missing}")
-(OUT / "stations_meta.json").write_text(json.dumps({
+write_json(OUT / "stations_meta.json", {
     "total_with_coords": len(sta_out),
     "domestic_per_country": n_dom,
     "international_per_country": n_intl,
     "missing_coords_per_country": n_missing,
-}, indent=2))
+}, indent=2)
 
 
 # ── 4b. KG sample: a representative subgraph for in-browser visualisation ────
@@ -287,7 +322,7 @@ kg_sample = {
     },
 }
 print(f"  total sample: {len(kg_nodes)} nodes, {len(kg_edges)} edges")
-(OUT / "kg_sample.json").write_text(json.dumps(kg_sample, default=str))
+write_json(OUT / "kg_sample.json", kg_sample)
 
 
 # ── 5. Sample predictions for the interactive panel ───────────────────────────
@@ -321,18 +356,18 @@ samples = []
 for b in df["bucket"].unique():
     sub = df[df["bucket"] == b]
     samples.append(sub.sample(n=min(1250, len(sub)), random_state=42))
-sample = pd.concat(samples, ignore_index=True)
+pred_sample = pd.concat(samples, ignore_index=True)
 keep = [c for c in ["service_id","station_id","country","date","train_class_code",
                      "stop_order","position_norm","y_stop","delay_min",
-                     "p_b","yp_b","p_a","yp_a"] + feat_keep if c in sample.columns]
-sample = sample[keep].copy()
-sample = sample.loc[:, ~sample.columns.duplicated()]
+                     "p_b","yp_b","p_a","yp_a"] + feat_keep if c in pred_sample.columns]
+pred_sample = pred_sample[keep].copy()
+pred_sample = pred_sample.loc[:, ~pred_sample.columns.duplicated()]
 # Round numeric columns for compact JSON
-for c in sample.columns:
-    if pd.api.types.is_float_dtype(sample[c]):
-        sample[c] = sample[c].round(3)
-print(f"  → {len(sample)} sample predictions (each with A and B + 21 features)")
-(OUT / "predictions_sample.json").write_text(sample.to_json(orient="records"))
+for c in pred_sample.columns:
+    if pd.api.types.is_float_dtype(pred_sample[c]):
+        pred_sample[c] = pred_sample[c].round(3)
+print(f"  → {len(pred_sample)} sample predictions (each with A and B + 21 features)")
+write_json(OUT / "predictions_sample.json", _records_safe(pred_sample))
 
 
 # ── 5b. Cause-prediction playground samples ───────────────────────────────────
@@ -357,7 +392,7 @@ if nl_lab_path.exists():
     for c in nl_sample.columns:
         if pd.api.types.is_float_dtype(nl_sample[c]):
             nl_sample[c] = nl_sample[c].round(3)
-    cause_data["countries"]["NL"] = nl_sample[cols].to_dict("records")
+    cause_data["countries"]["NL"] = _records_safe(nl_sample[cols])
 
 # IT + FI: from v2 transfer parquets, joined with feature snapshots
 for cc, parquet_name in [("IT", "transfer_IT_preds_v2.parquet"),
@@ -379,7 +414,7 @@ for cc, parquet_name in [("IT", "transfer_IT_preds_v2.parquet"),
     for c in sample.columns:
         if pd.api.types.is_float_dtype(sample[c]):
             sample[c] = sample[c].round(3)
-    cause_data["countries"][cc] = sample.to_dict("records")
+    cause_data["countries"][cc] = _records_safe(sample)
     print(f"  {cc}: {len(sample)} cause samples")
 
 # Global cause class list (consistent ordering)
@@ -390,8 +425,59 @@ cause_data["classes"] = [
 # Per-country distributions from cause_transfer_v2
 v2_t = json.load(open(ROOT / "stop_level" / "results" / "cause_transfer_v2.json"))
 cause_data["transfer"] = v2_t
-(OUT / "cause_play.json").write_text(json.dumps(cause_data, default=str))
+write_json(OUT / "cause_play.json", cause_data)
 print(f"  Total NL/IT/FI cause samples written")
+
+
+# ── 5c. Routes for the disruption prediction page ─────────────────────────────
+print("[5c/6] Baking routes for prediction page ...")
+# For every unique service_id in the predictions sample, bake the FULL ordered
+# route from stops_test.parquet so the predict page can draw a polyline + timeline.
+service_ids = list(set(pred_sample["service_id"].astype(str).tolist()))
+print(f"  unique services in predictions sample: {len(service_ids):,}")
+import pyarrow.parquet as pq
+test_full = pd.read_parquet(test_features.with_name("stops_test.parquet"),
+    columns=["service_id", "station_id", "stop_order", "delay_min",
+              "scheduled_arrival_hour", "scheduled_arrival_dow", "country",
+              "y_stop", "n_total_stops"])
+# Cast categorical → str before filter (categorical .isin() with python set drops rows)
+test_full["service_id"] = test_full["service_id"].astype(str)
+test_full["station_id"] = test_full["station_id"].astype(str)
+test_full["country"]    = test_full["country"].astype(str)
+service_ids_set = set(str(s) for s in service_ids)
+print(f"  service_ids set sample: {list(service_ids_set)[:3]}")
+print(f"  test_full service_id sample: {test_full['service_id'].head(3).tolist()}")
+test_full = test_full[test_full["service_id"].isin(service_ids_set)]
+print(f"  test_full after filter: {test_full.shape}, unique services: {test_full['service_id'].nunique()}")
+# Join with station coords for the map polyline
+sta_coords = {s["id"]: {"lat": s["lat"], "lon": s["lon"], "country": s["country"]}
+                for s in sta_out}
+routes = {}
+for sid, g in test_full.groupby("service_id"):
+    g_sorted = g.sort_values("stop_order")
+    stops = []
+    for _, r in g_sorted.iterrows():
+        coord = sta_coords.get(r["station_id"], {})
+        stops.append({
+            "station_id":   r["station_id"],
+            "stop_order":   int(r["stop_order"]),
+            "delay_min":    round(float(r["delay_min"]), 1)
+                              if pd.notna(r["delay_min"]) else None,
+            "y_stop":       int(r["y_stop"]) if pd.notna(r["y_stop"]) else 0,
+            "hour":         int(r["scheduled_arrival_hour"])
+                              if pd.notna(r["scheduled_arrival_hour"]) else None,
+            "lat":          coord.get("lat"),
+            "lon":          coord.get("lon"),
+        })
+    if stops:
+        routes[sid] = {
+            "country":     str(g_sorted["country"].iloc[0]),
+            "n_stops":     int(g_sorted["n_total_stops"].iloc[0])
+                              if pd.notna(g_sorted["n_total_stops"].iloc[0]) else len(stops),
+            "stops":       stops,
+        }
+print(f"  routes baked: {len(routes):,}")
+write_json(OUT / "routes.json", routes)
 
 
 # ── 6. Manifest of available figures ──────────────────────────────────────────
@@ -408,7 +494,7 @@ for p in sorted((ROOT / "stop_level" / "figures").glob("*.png")):
     figs["evaluation"].append(p.name)
 for p in sorted((ROOT / "stop_level" / "figures" / "xai").glob("*.png")):
     figs["xai"].append(p.name)
-(OUT / "figures.json").write_text(json.dumps(figs, indent=2))
+write_json(OUT / "figures.json", figs, indent=2)
 
 print(f"\nDone. Wrote {len(list(OUT.glob('*.json')))} files to {OUT}")
 for f in sorted(OUT.glob("*.json")):
