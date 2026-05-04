@@ -83,5 +83,5 @@ The dashboard auto-detects `prefers-color-scheme` and provides a manual toggle b
 ## Caveats
 
 - The "Prediction panel" looks up rows from a 5,000-row stratified sample of the test set, not a live model. To run the actual XGB model client-side we'd need to convert it to ONNX and load via `onnxruntime-web` (~2 MB extra) — left as future work.
-- The "Knowledge-Graph bridge" result in the prediction panel is **synthesised from the available station + neighbour data**, not a live Cypher query against Kuzu. To run live Kuzu in the browser we'd need WASM-Kuzu (~5-10 MB) — also future work.
+- The "Knowledge-Graph bridge" result in the prediction panel is **synthesised from the available station + neighbour data**, not a live query against Sparksee. The same query runs server-side in 7.7 ms — see `stop_level/build_kg.py::run_bridge_demo`. Putting it on the static site would need a small server proxy (Sparksee is JVM-only); future work.
 - The map down-samples to ≤3 stations per 0.5° grid cell to keep first-paint snappy on mobile. The full 2,397-station list is in `Data/stops/station_id_to_idx.json` if you need it.

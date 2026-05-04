@@ -40,15 +40,15 @@
   <!-- Hero -->
   <section class="kg-hero">
     <h1>European Railway <span class="grad">Knowledge Graph</span></h1>
-    <p class="subtitle">An <strong>809 MB</strong> embedded Kuzu graph database — Sparksee-portable, Cypher-native.<br>
-      <span class="muted">3 node types · 3 relationship types · 1.22 M nodes · 16.75 M relationships · 52 ms bridge query</span></p>
+    <p class="subtitle">Embedded <strong>Sparksee 5.2.3</strong> labelled-property graph — driven from Python via JPype.<br>
+      <span class="muted">3 node types · 3 edge types · full-graph stats below; bridge query in <strong>7.7 ms</strong> on the eval-mode hub subgraph</span></p>
     <div class="kg-stat-row">
       <div><span class="v">2,397</span><span class="l">Stations</span></div>
       <div><span class="v">1.22M</span><span class="l">TrainServices</span></div>
       <div><span class="v">2,938</span><span class="l">FaultEvents</span></div>
       <div><span class="v">16.59M</span><span class="l">STOPS_AT</span></div>
       <div><span class="v">163,902</span><span class="l">ADJACENT_TO</span></div>
-      <div><span class="v">52ms</span><span class="l">Query latency</span></div>
+      <div><span class="v">7.7ms</span><span class="l">Query latency</span></div>
     </div>
   </section>
 
@@ -161,7 +161,7 @@
   <section class="kg-section">
     <div class="kg-section-head">
       <h2>③ Bridge query template</h2>
-      <p class="muted">The Cypher template that links a SHAP-flagged high-risk stop back to its surrounding KG context. Runs in 52 ms on the live Kuzu DB; portable to Sparksee unchanged.</p>
+      <p class="muted">The Cypher template that links a SHAP-flagged high-risk stop back to its surrounding KG context. Implemented in native Sparksee 5.2.3 calls (<code>findEdge</code> + <code>explode</code> + <code>neighbors</code>) for a 7.7 ms run on the FI_HKH hub subgraph; the Cypher form is the canonical portable description.</p>
     </div>
     <pre class="kg-cypher" aria-label="Cypher query"><code>MATCH (svc:<span class="cy-label">TrainService</span> {service_id: <span class="cy-param">$sid</span>})-[stop:<span class="cy-rel">STOPS_AT</span>]->(st:<span class="cy-label">Station</span> {station_id: <span class="cy-param">$stid</span>})
 OPTIONAL MATCH (f:<span class="cy-label">FaultEvent</span>)-[:<span class="cy-rel">REPORTED_AT</span>]->(st)
@@ -182,7 +182,7 @@ RETURN
 </main>
 
 <footer>
-  <p>TravelWise · Kuzu KG (Sparksee-portable) · 6 tables · 1.22 M nodes · 16.75 M edges</p>
+  <p>TravelWise · Sparksee 5.2.3 KG · 6 tables · full schema sized for 1.22 M nodes · 16.75 M edges</p>
 </footer>
 
 <!-- Library scripts (CDN) -->

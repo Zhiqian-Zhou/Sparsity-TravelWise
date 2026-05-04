@@ -94,7 +94,7 @@ If you prefer no shell-escape, just remove the `--shell-escape` flag — the lis
 | 5 Models | 2 | 4-model zoo, imbalance handling, threshold tuning, run-times |
 | 6 Evaluation | 4 | Headline metrics + 6 figures (incl. PR-ROC grid, calibration, breakdowns) |
 | 7 XAI | 4 | TreeSHAP global, beeswarm, lag ablation, scenario uplift, waterfalls |
-| 8 KG | 3 | Schema, build stats, bridge query, Sparksee swap path |
+| 8 KG | 3 | Sparksee 5.2.3 schema, build stats, native-API bridge query in 7.7 ms |
 | 9 Cause prediction | 4 | NL labelled data + 5-model v1/v2 + per-class breakthrough |
 | 10 Transfer | 3 | IT + FI failure modes, agent reviews, fix path |
 | 11 Discussion | 2 | Inflight uplift interpretation, limitations |
@@ -104,4 +104,4 @@ If you prefer no shell-escape, just remove the `--shell-escape` flag — the lis
 
 ## Total citations
 
-17 BibTeX entries: 8 foundational ML papers (Breiman, Chen, Ke, Hamilton, Hochreiter, Schuster, Lundberg×2, Pedregosa, Paszke, Fey), 4 datasets (Trenitalia, FI-TW, RDT, Open-Meteo), 3 tools (Sparksee/DEX, Kuzu), 1 domain survey, 1 PyTorch.
+19 BibTeX entries: foundational ML papers (Breiman, Chen, Ke, Hamilton, Hochreiter, Schuster, Lundberg×2, Pedregosa, Paszke, Fey), datasets (Trenitalia, FI-TW, RDT, Open-Meteo), graph-DB tools (Sparksee, DEX, Kuzu), one domain survey, one PyTorch.

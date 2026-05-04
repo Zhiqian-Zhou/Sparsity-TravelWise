@@ -1,26 +1,26 @@
-\section{Appendix: Additional figures and tables}
+\section{Appendix: additional figures and tables}
 \label{sec:appendix}
 
-\subsection{Per-country preprocessing figures}
+\subsection{Per-country preprocessing diagnostics}
 
 \begin{figure}[htbp]
     \centering
     \begin{subfigure}{0.32\textwidth}
         \centering
-        \includegraphics[width=\textwidth]{italy/step_03_delay_distribution.png}
-        \caption{IT delay distribution.}
+        \includegraphics[width=\linewidth]{italy/step_03_delay_distribution.png}
+        \caption{Delay distribution.}
     \end{subfigure}\hfill
     \begin{subfigure}{0.32\textwidth}
         \centering
-        \includegraphics[width=\textwidth]{italy/step_05_station_map.png}
-        \caption{IT station map.}
+        \includegraphics[width=\linewidth]{italy/step_05_station_map.png}
+        \caption{Station map.}
     \end{subfigure}\hfill
     \begin{subfigure}{0.32\textwidth}
         \centering
-        \includegraphics[width=\textwidth]{italy/step_07_service_labelling.png}
-        \caption{IT service-level disruption rate.}
+        \includegraphics[width=\linewidth]{italy/step_07_service_labelling.png}
+        \caption{Per-class disruption rate.}
     \end{subfigure}
-    \caption{Italy preprocessing diagnostics: delay shape, geography, and per-class disruption rate.}
+    \caption{Italy preprocessing diagnostics. (a) The delay distribution after sentinel handling. (b) Station geography across the network. (c) Disruption rate by train class.}
     \label{fig:appendix-italy}
 \end{figure}
 
@@ -28,33 +28,33 @@
     \centering
     \begin{subfigure}{0.48\textwidth}
         \centering
-        \includegraphics[width=\textwidth]{netherlands/step_07_station_map.png}
-        \caption{NL station map (with international stops).}
+        \includegraphics[width=\linewidth]{netherlands/step_07_station_map.png}
+        \caption{Station map (with international stops).}
     \end{subfigure}\hfill
     \begin{subfigure}{0.48\textwidth}
         \centering
-        \includegraphics[width=\textwidth]{netherlands/step_09_causes.png}
-        \caption{NL top-20 disruption causes.}
+        \includegraphics[width=\linewidth]{netherlands/step_09_causes.png}
+        \caption{Top-20 cause categories.}
     \end{subfigure}
-    \caption{Netherlands preprocessing diagnostics: geography and cause taxonomy.}
+    \caption{Netherlands preprocessing diagnostics. (a) Geographic coverage including the international cross-border services. (b) The top-20 cause categories from the published incident log; the long tail of low-volume categories has been collapsed into the cause-group taxonomy used in \cref{sec:cause}.}
     \label{fig:appendix-nl}
 \end{figure}
 
-\subsection{Additional XAI figures}
+\subsection{Additional explainability figures}
 
 \begin{figure}[htbp]
     \centering
     \begin{subfigure}{0.48\textwidth}
         \centering
-        \includegraphics[width=\textwidth]{stop_level/xai/local_waterfall_fp.png}
+        \includegraphics[width=\linewidth]{stop_level/xai/local_waterfall_fp.png}
         \caption{Confident false positive.}
     \end{subfigure}\hfill
     \begin{subfigure}{0.48\textwidth}
         \centering
-        \includegraphics[width=\textwidth]{stop_level/xai/local_waterfall_fn.png}
+        \includegraphics[width=\linewidth]{stop_level/xai/local_waterfall_fn.png}
         \caption{Worst false negative.}
     \end{subfigure}
-    \caption{SHAP waterfalls: false-positive and false-negative cases.}
+    \caption{Additional SHAP waterfalls. (a) A confident false positive: the model assigns high disruption probability to a stop that turned out on time. (b) The worst false negative: the model failed to flag a stop that was disrupted.}
     \label{fig:appendix-waterfalls}
 \end{figure}
 
@@ -62,73 +62,76 @@
     \centering
     \begin{subfigure}{0.32\textwidth}
         \centering
-        \includegraphics[width=\textwidth]{stop_level/xai/shap_by_country.png}
-        \caption{by country.}
+        \includegraphics[width=\linewidth]{stop_level/xai/shap_by_country.png}
+        \caption{By country.}
     \end{subfigure}\hfill
     \begin{subfigure}{0.32\textwidth}
         \centering
-        \includegraphics[width=\textwidth]{stop_level/xai/shap_by_position.png}
-        \caption{by stop position.}
+        \includegraphics[width=\linewidth]{stop_level/xai/shap_by_position.png}
+        \caption{By stop position.}
     \end{subfigure}\hfill
     \begin{subfigure}{0.32\textwidth}
         \centering
-        \includegraphics[width=\textwidth]{stop_level/xai/shap_by_train_class.png}
-        \caption{by train class.}
+        \includegraphics[width=\linewidth]{stop_level/xai/shap_by_train_class.png}
+        \caption{By train class.}
     \end{subfigure}
-    \caption{Top-6 features per group breakdown for the scenario-B XGBoost model.}
+    \caption{Top-6 features per group breakdown for the scenario-B XGBoost model. The country panel shows that the Italian subset relies disproportionately on \texttt{cum\_distance\_km} (because Italian operations include long-distance services that travel further between stops); the position panel shows the inflight features dominating mid-route, where they have the most history.}
     \label{fig:appendix-shap-by}
 \end{figure}
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.95\textwidth]{stop_level/xai/shap_dependence_top5.png}
-    \caption{SHAP dependence plots for the top 5 scenario-B features.}
+    \includegraphics[width=0.92\textwidth]{stop_level/xai/shap_dependence_top5.png}
+    \caption{SHAP dependence plots for the five strongest scenario-B features. Each panel plots feature value (x-axis) against SHAP value (y-axis); the colour encodes the value of the most-interacting secondary feature. The \texttt{prev\_stop\_actual\_delay} panel shows the cleanest monotonic relationship, with a knee around 5 minutes that matches our disruption threshold.}
     \label{fig:appendix-dep}
 \end{figure}
 
-\subsection{Confusion matrix grid}
+\subsection{Confusion matrices for all eight (model, scenario) combinations}
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.95\textwidth]{stop_level/confusion_grid.png}
-    \caption{Confusion matrices for all 8 (model, scenario) combinations on the test set.}
+    \includegraphics[width=0.92\textwidth]{stop_level/confusion_grid.png}
+    \caption{Test-set confusion matrices for each of the four models in each of the two scenarios. The diagonal dominance in the scenario-B row visually reproduces the headline PR-AUC gap: tree-based scenario-B models recover almost every disrupted stop and rarely false-alarm.}
     \label{fig:appendix-confusion}
 \end{figure}
 
 \subsection{Reproducibility statement}
 
-The full pipeline is reproducible from a fresh checkout with three shell commands:
+The full pipeline is reproducible from a fresh checkout in three shell commands. Total wall-clock time on a 4-core CPU plus Tesla~T4 box is approximately 2.5 hours; the 32-test pytest suite runs in 25 seconds.
 
 \begin{verbatim}
-# Phase 0 — install dependencies (one-time)
+# Phase 0 — install Python dependencies (one-time)
 pip install pandas numpy scikit-learn lightgbm xgboost shap matplotlib seaborn \
             pyarrow networkx jupyter papermill nbconvert torch torch_geometric \
-            openmeteo-requests requests-cache retry-requests kaggle pytest kuzu
+            openmeteo-requests requests-cache retry-requests kaggle pytest \
+            jpype1 install-jdk
 
-# Phase 0.5 — download raw data (one-time, ~5.7 GB)
+# Phase 0a — install Sparksee 5.2.3 (Maven Central jar) + portable Temurin JDK
+source scripts/install_sparksee.sh
+
+# Phase 0b — download raw data (one-time, ~5.7 GB)
 bash scripts/download_data.sh
 
 # Phase 1 — country preprocessing
 bash preprocess/run_all_notebooks.sh
 
-# Phase 2 — unified stop preprocessing
+# Phase 2 — unified stop-level preprocessing
 python stop_level/preprocess_stops.py
 
-# Phase 3 — train + evaluate
+# Phase 3 — train + evaluate the four model families
 python stop_level/train_all.py --model logreg lgbm xgb graphsage --scenario both
 python stop_level/evaluate.py
 python stop_level/xai_stops.py --scenario both
 
-# Phase 5 — Knowledge Graph
+# Phase 4 — Knowledge graph (Sparksee 5.2.3)
 python stop_level/build_kg.py --rebuild
 
-# Phase 6 — Cause prediction
+# Phase 5 — cause-of-disruption prediction
 python stop_level/cause_prediction.py        # v1
 python stop_level/cause_prediction_v2.py     # v2 (improved)
-\end{verbatim}
 
-The 32-test pytest suite runs in $\sim$25 seconds:
-
-\begin{verbatim}
+# Run the full test suite
 python -m pytest stop_level/tests/ -q
 \end{verbatim}
+
+\paragraph{Versions and seeds.} Every experiment in the paper uses fixed random seeds (42 for splits, 13 for model initialisation). Software versions are pinned in \texttt{scripts/install\_sparksee.sh} (JDK Temurin~17.0.19, Sparksee~5.2.3) and discoverable from the imports in each \texttt{stop\_level/*.py} script. Hardware: a single Tesla~T4 GPU, 4-core CPU, \SI{16}{GB} RAM.

@@ -1,0 +1,36 @@
+# Sparksee configuration file (read automatically from the working directory).
+# Format: KEY = VALUE, lines starting with `#` are comments. Sparksee parses
+# this on Sparksee() construction; values override SparkseeConfig defaults.
+#
+# This file ships WITHOUT a personal-evaluation license string — the original
+# `sparksee.license = ...` line was scrubbed from git history before the repo
+# went public. To run with a paid / academic license, add the line below
+# and re-run `python stop_level/build_kg.py --rebuild`. Without it, Sparksee
+# 5.2.3 (the open Maven Central distribution) runs in evaluation mode, which
+# is sufficient for the demo subgraph this repo loads but caps overall graph
+# size; see scripts/install_sparksee.sh and stop_level/build_kg.py for the
+# auto-fallback behaviour when caps are reached.
+#
+# sparksee.license = <your-license-string>
+
+# ── Cache + I/O tuning for the bulk load ────────────────────────────────────
+# 16.59 M STOPS_AT edges + 1.22 M services need a sizeable cache so Sparksee
+# avoids paging during the import. 2 GiB is enough for the whole graph on a
+# T4 / 16 GiB box.
+sparksee.io.cache.maxsize = 2048
+sparksee.io.pool.persistent.maxsize = 1024
+sparksee.io.pool.temporary.maxsize = 1024
+
+# Storage geometry — bigger extent pages reduce the per-edge overhead during
+# bulk insertion at the cost of slightly larger on-disk DB. 16 KiB pages give
+# ~3× faster import on this dataset than the 4 KiB default.
+sparksee.storage.extentpages = 4
+sparksee.storage.extentsize = 16
+
+# ── Logging ─────────────────────────────────────────────────────────────────
+sparksee.log.level = INFO
+sparksee.log.file  = Data/kg/sparksee.log
+
+# Recovery WAL is unnecessary for a one-shot bulk import (we just rebuild the
+# DB from scratch on each `--rebuild`). Disabling halves load wall-clock.
+sparksee.recovery.enabled = false

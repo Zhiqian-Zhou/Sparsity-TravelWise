@@ -37,6 +37,11 @@ preprocess/_executed/
 
 # ── Sparksee runtime artefacts ─────────────────────────────────────────────────
 sparksee.log
+hs_err_pid*.log
+core.*
+
+# ── Portable JDK + Sparksee jar (installed by scripts/install_sparksee.sh) ─────
+.tools/
 
 # ── Python noise ───────────────────────────────────────────────────────────────
 __pycache__/

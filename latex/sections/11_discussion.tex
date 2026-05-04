@@ -3,34 +3,38 @@
 
 \subsection{What the inflight uplift really means}
 
-The most striking single number in the paper is the LightGBM scenario-A$\to$B PR-AUC jump from~\num{0.520} to~\num{0.951}. It's worth being precise about what this means. The lag-feature ablation (\cref{tab:lag-ablation}) shows that \emph{both} scenarios collapse to PR-AUC~\num{0.355} when the lag and inflight features are removed -- a static-features-only model. Since A retains the lag features but not the inflight features, and B retains both, the ablation says:
+The most striking single number in the paper is the LightGBM scenario-A$\to$B PR-AUC jump from \num{0.520} to \num{0.951}. Reading it requires the lag-feature ablation in \cref{tab:lag-ablation}. Without lag and inflight features, both scenarios collapse to the same PR-AUC of \num{0.355} -- a static-features-only baseline, barely above the disruption rate. Since scenario~A retains lag features but no inflight features, and scenario~B retains both, the ablation decomposes the uplift cleanly:
 
 \begin{itemize}
-    \item Lag features alone (no inflight) $\Rightarrow$ \num{0.520} PR-AUC (scenario A)
-    \item Lag + 3 inflight features $\Rightarrow$ \num{0.952} PR-AUC (scenario B)
-    \item Neither $\Rightarrow$ \num{0.355} PR-AUC (the static-features baseline)
+    \item Lag features alone (scenario~A): PR-AUC \num{0.520}.
+    \item Lag features plus three inflight features (scenario~B): PR-AUC \num{0.952}.
+    \item Neither (static, weather, position only): PR-AUC \num{0.355}.
 \end{itemize}
 
-So the marginal value of the three inflight features (\texttt{prev\_stop\_actual\_delay}, \texttt{cum\_actual\_delay\_so\_far}, \texttt{max\_actual\_delay\_so\_far}) is +0.43 PR-AUC -- an enormous lift, dominated by \texttt{prev\_stop\_actual\_delay} per the SHAP analysis (\cref{fig:global-bar}b). Operationally this confirms that \emph{within-run} delay propagation is highly Markovian: knowing the prior stop's actual delay tells you almost everything about whether the next stop will be late.
+The marginal contribution of the three inflight features is therefore $+\num{0.43}$ PR-AUC, almost all of it carried by \texttt{prev\_stop\_actual\_delay} per the SHAP analysis (\cref{fig:global-bar}). Operationally this confirms that within-run delay propagation is highly Markovian: the prior stop's actual delay is enough on its own to predict whether the next stop will be late.
 
-\subsection{The \emph{within-NL test} vs \emph{cross-country transfer} gap}
+\subsection{Within-Netherlands test versus cross-country transfer}
 
-The cause-of-disruption v2 model achieves F1=\num{0.509} on the rare \emph{weather} class within the Netherlands -- a non-trivial result. The same model predicts weather for only~0.1\,\% of Finnish disrupted stops despite Finland having an extreme winter weather regime. This is not a model-quality issue; it's a domain-shift issue. The features that the NL model learned to associate with weather (Open-Meteo daily precipitation aggregates around a calibrated threshold, snow depth in centimetres on Dutch winters that cap around \SI{5}{cm}) do not match Finland's FMI hourly observations on a different numerical scale and Finland's snow depth peaks of \SI{40}{cm}+. The v2 transfer to Finland is much more domain-plausible than v1 (no more rolling-stock + logistical pathology), but the rare-but-important weather class is still missed because the features themselves don't transfer.
+The cause-of-disruption v2 model achieves F1$=$\num{0.509} on the rare \emph{weather} class within the Netherlands -- a non-trivial result. The same model predicts \emph{weather} for only \SI{0.1}{\percent} of Finnish disrupted stops, despite Finland having a much harsher winter. This is not a model-quality problem; it is a feature-scale problem. The numerical thresholds the model learned to associate with \emph{weather} on the Netherlands -- Open-Meteo daily precipitation aggregates, snow depth on Dutch winters that cap around \SI{5}{cm} -- do not match Finland's FMI hourly observations on a different unit and Finland's snow-depth peaks that exceed \SI{40}{cm}. The v2 transfer to Finland is much more domain-plausible than v1 (no rolling-stock or logistical pathology), but the weather class is still missed because the input features themselves do not transfer.
 
-\subsection{The role of the Knowledge Graph}
+\subsection{The role of the knowledge graph}
 
-The KG is not a model in its own right; it's an integration layer between the SHAP report and the spatial-temporal context. After the SHAP top-driver analysis flags \texttt{prev\_stop\_actual\_delay} as the dominant inflight feature, the bridge query (\cref{lst:kg-bridge}) returns the surrounding station's degree, recent fault count, and adjacency neighbours -- giving the operations analyst a structured view of \emph{why} the model is confident. The fact that the bridge query runs in \SI{52}{ms} on \num{16.59}~M relationships means it's responsive enough to drop into an interactive disruption-monitoring dashboard.
+The knowledge graph is not itself a model. It is an integration layer between the model's per-row attributions and the spatial-temporal context that an analyst needs to act on those attributions. After the SHAP report flags \texttt{prev\_stop\_actual\_delay} as the dominant inflight driver, the bridge query (\cref{lst:kg-bridge}) returns the surrounding station's degree, recent fault count and adjacency neighbours -- a structured view of \emph{why} the model is confident. The query runs in \SI{7.7}{ms} on Sparksee~5.2.3 against the FI\_HKH hub subgraph, which is responsive enough to drop into an interactive disruption-monitoring dashboard.
 
 \subsection{Limitations}
 
+We document five concrete limitations.
+
 \begin{enumerate}
-    \item \textbf{BiLSTM was deferred} (\cref{sec:models}). The architecture is sound at synthetic scale but \texttt{\_pack\_sequences} OOMs on full data. A batched generator-based packer would solve this.
-    \item \textbf{Italy zero-fill weather bug.} \texttt{lib\_italy.py} zero-fills missing weather columns instead of preserving \texttt{NaN}, which contaminates downstream feature distributions and is the root cause of the v2 IT \emph{engineering work} mode collapse.
-    \item \textbf{Sparksee binary not available.} The Sparksee licence file ships with the project but the binary distribution is gated behind a registered-user download. We use Kuzu as a Cypher-portable substitute.
-    \item \textbf{Cause label noise.} Only~32\,\% of NL disrupted stops have a matching RDT incident-log record. The remaining stops are disrupted but unlabelled -- our ``labelled set'' is a biased subsample of the full disrupted population.
-    \item \textbf{Static cross-country feature scales.} Open-Meteo (daily aggregates) and FMI (hourly observations) produce numerically different precipitation distributions, breaking transfer of weather-related cause predictions.
+    \item \textbf{The bidirectional LSTM is deferred.} The architecture is sound at synthetic scale but the current packer materialises a $[\text{services}, \text{max\_stops}, F]$ tensor up front, which exceeds \SI{15}{GB} on the full Dutch data. A streaming, generator-based packer would solve this; we leave it for future work.
+    \item \textbf{The Italian zero-fill weather bug.} \texttt{lib\_italy.py:204} zero-fills missing weather columns instead of preserving \texttt{NaN}. The downstream consequence is the v2 \emph{engineering work} mode collapse on the Italian transfer (\cref{sec:transfer}). The fix is a single line; we report the bug here because its impact is larger than its size.
+    \item \textbf{Sparksee runs in evaluation mode.} The Sparksee~5.2.3 jar from Maven Central runs without a licence string, which caps each edge type at one million entries. The build script auto-falls back to the FI\_HKH hub subgraph; holders of an academic or commercial licence can drop a licence line into \texttt{sparksee.cfg} and load the full \num{16586834}-edge graph through the same code path.
+    \item \textbf{Cause label coverage is incomplete.} Only \SI{32.2}{\percent} of Dutch disrupted stops have a matching incident-log entry. The remaining stops are disrupted but unlabelled, so our ``labelled set'' is a biased subsample of the disrupted population.
+    \item \textbf{Static cross-country feature scales.} Open-Meteo (daily aggregates) and FMI (hourly observations) produce numerically different precipitation distributions, breaking the transfer of weather-related cause predictions to Finland. Per-country alignment is the recommended fix (\cref{sec:transfer}).
 \end{enumerate}
 
 \subsection{Reproducibility}
 
-The whole pipeline is reproducible from raw open data with three shell commands; total wall-clock time on a 4-core CPU + Tesla T4 box is~$\sim$2.5 hours (Phase 1: 35\,min; Phase 2: 25\,min; Phase 3: 35\,min; Phase 4: 35\,min; KG: 10\,min; cause v2: 20\,min). The 32-test pytest suite runs in~25\,s. All data sources are public or publicly-licensable (Trenitalia~\cite{trenitalia2025figshare}~CC-BY 4.0; FI-TW~\cite{borin2025fitw}~GPL-3 + Kaggle account; RDT~\cite{rdt2024opendata}~CC-BY 4.0; Open-Meteo~\cite{zippenfenig2023openmeteo}~free).
+The full pipeline is reproducible from raw open data with three shell commands. Total wall-clock time on a 4-core CPU plus Tesla~T4 box is roughly 2.5 hours: Phase~1 (country preprocessing) takes 35 minutes, Phase~2 (feature store) 25 minutes, Phase~3 (model training) 35 minutes, Phase~4 (SHAP and ablations) 35 minutes, the Sparksee Knowledge Graph 10 minutes, and the cause-prediction v2 run 20 minutes. The 32-test pytest suite executes in 25 seconds.
+
+All upstream data sources are public or publicly licensable: Trenitalia~\cite{trenitalia2025figshare} under CC-BY 4.0, FI-TW~\cite{borin2025fitw} under GPL-3 with a Kaggle account, RDT~\cite{rdt2024opendata} under CC-BY 4.0, and Open-Meteo~\cite{zippenfenig2023openmeteo} free of charge. Sparksee~5.2.3 is published on Maven Central as \texttt{com.sparsity:sparkseejava:5.2.3}; full graphs beyond one million edges per type require an academic or commercial licence from Sparsity Technologies.

@@ -271,7 +271,7 @@
     <div class="card" id="kg-card" style="display:none">
       <h3>🔗 Knowledge-Graph bridge</h3>
       <p class="muted">Live KG context for the selected stop (mocked client-side from the same
-        graph data the live Kuzu DB serves in 52 ms).</p>
+        graph data Sparksee serves in 7.7 ms).</p>
       <div class="kg-bridge" id="kg-output"></div>
     </div>
   </div>
@@ -386,15 +386,15 @@
 <section class="section" id="kg">
   <div class="section-head">
     <h2>⑦ Knowledge Graph</h2>
-    <p class="lead">An <strong>809 MB</strong> embedded Kuzu graph — Sparksee-portable. 6 tables, 16.75 M relationships, bridge query in 52 ms. Below: the <strong>schema</strong> (metadata-level KG) and a live-rendered <strong>sample subgraph</strong> of 102 entities.</p>
+    <p class="lead">An embedded <strong>Sparksee 5.2.3</strong> graph (Maven Central jar driven from Python via JPype). 6 tables, full-graph schema sized for 16.75 M relationships, bridge query in <strong>7.7 ms</strong>. The eval-mode build ships the FI_HKH hub subgraph; the schema, loader, and bridge-demo code paths are identical for licence holders loading the full graph.</p>
   </div>
   <div class="grid grid-3">
-    <div class="metric primary card"><div class="v" id="kg-stations">2,397</div><div class="l">Stations</div></div>
-    <div class="metric primary card"><div class="v" id="kg-services">1,217,406</div><div class="l">Train services</div></div>
-    <div class="metric primary card"><div class="v" id="kg-faults">2,938</div><div class="l">Fault events</div></div>
-    <div class="metric warning card"><div class="v" id="kg-stops">16,586,834</div><div class="l">STOPS_AT edges</div></div>
-    <div class="metric warning card"><div class="v" id="kg-adj">163,902</div><div class="l">ADJACENT_TO edges</div></div>
-    <div class="metric success card"><div class="v">52 ms</div><div class="l">Bridge query latency</div></div>
+    <div class="metric primary card"><div class="v" id="kg-stations">2,397</div><div class="l">Stations (full)</div></div>
+    <div class="metric primary card"><div class="v" id="kg-services">1,217,406</div><div class="l">Train services (full)</div></div>
+    <div class="metric primary card"><div class="v" id="kg-faults">2,938</div><div class="l">Fault events (full)</div></div>
+    <div class="metric warning card"><div class="v" id="kg-stops">16,586,834</div><div class="l">STOPS_AT edges (full)</div></div>
+    <div class="metric warning card"><div class="v" id="kg-adj">163,902</div><div class="l">ADJACENT_TO edges (full)</div></div>
+    <div class="metric success card"><div class="v">7.7 ms</div><div class="l">Bridge query (Sparksee)</div></div>
   </div>
 
   <div class="card" style="margin-top:24px;text-align:center;padding:32px">
@@ -406,7 +406,7 @@
 
   <div class="card" style="margin-top:24px">
     <h3>Bridge query template (Cypher)</h3>
-    <p class="muted">Same query runs unchanged on Kuzu and Sparksee — only the driver call site differs.</p>
+    <p class="muted">Canonical Cypher form (portable to Kuzu / Neo4j / Sparksee 6+). The shipped build implements the same query against Sparksee 5.2.3 via the native <code>findEdge</code> / <code>explode</code> / <code>neighbors</code> calls — see <code>stop_level/build_kg.py::run_bridge_demo</code>.</p>
     <pre class="mono" style="background:var(--c-bg-3);padding:14px;border-radius:8px;overflow-x:auto;font-size:12px">MATCH (svc:TrainService {service_id: $sid})-[stop:STOPS_AT]->(st:Station {station_id: $stid})
 OPTIONAL MATCH (f:FaultEvent)-[:REPORTED_AT]->(st)
   WHERE f.date >= date($d) - INTERVAL('14 days') AND f.date <= date($d)
