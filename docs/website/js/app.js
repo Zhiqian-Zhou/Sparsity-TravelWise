@@ -602,60 +602,173 @@ function wirePredict() {
   const date    = document.getElementById("pred-date");
 
   function bucketOf(p) {
+    if (p == null) return "";
     if (p < 0.25) return "low";
     if (p < 0.5)  return "mid_low";
     if (p < 0.75) return "mid_high";
     return "high";
   }
 
-  function pickRow(filterFn) {
-    const candidates = STATE.predictions.filter(r => {
+  function matchingRows(extraFilter) {
+    return STATE.predictions.filter(r => {
       if (country.value && r.country !== country.value) return false;
-      if (bucket.value && bucketOf(r.p_disrupted) !== bucket.value) return false;
+      if (bucket.value && bucketOf(r.p_b) !== bucket.value) return false;
       if (service.value && !String(r.service_id).includes(service.value)) return false;
       if (date.value && r.date !== date.value) return false;
-      return filterFn(r);
+      return extraFilter ? extraFilter(r) : true;
     });
-    if (!candidates.length) {
-      alert("No matching stop in the 5K-row sample. Try a broader filter.");
+  }
+
+  function pickRow(extraFilter, errorMsg) {
+    const cs = matchingRows(extraFilter);
+    if (!cs.length) {
+      flashCounter("No matching stop. Try a broader filter.");
       return null;
     }
-    return candidates[Math.floor(Math.random() * candidates.length)];
+    return cs[Math.floor(Math.random() * cs.length)];
+  }
+
+  function flashCounter(msg) {
+    const el = document.getElementById("pred-counter");
+    el.textContent = msg;
+    el.style.color = "var(--c-warning)";
+    setTimeout(() => el.style.color = "", 1200);
+  }
+
+  // Update the "N matches" counter live as filters change
+  function updateCounter() {
+    const n = matchingRows().length;
+    document.getElementById("pred-counter").textContent = `${n.toLocaleString()} matching rows in 5K sample`;
   }
 
   function show(row) {
     if (!row) return;
     document.getElementById("pred-empty").style.display = "none";
-    const res = document.getElementById("pred-result");
-    res.classList.remove("hidden");
-    res.classList.add("fade-in");
-    const probPct = (row.p_disrupted * 100).toFixed(1) + "%";
-    document.getElementById("pred-prob").textContent = probPct;
-    document.getElementById("pred-fill").style.width = (row.p_disrupted * 100) + "%";
+    document.getElementById("pred-result").classList.remove("hidden");
+    document.getElementById("pred-drivers-card").style.display = "block";
+
+    // Animate dual-scenario probabilities
+    animateProb("pred-prob-a", "pred-fill-a", row.p_a ?? 0);
+    animateProb("pred-prob-b", "pred-fill-b", row.p_b ?? 0);
+
+    // Scenario flip banner
+    const flip = document.getElementById("pred-flip-banner");
+    if (row.p_a != null && row.p_b != null) {
+      const dPct = ((row.p_b - row.p_a) * 100);
+      if (Math.abs(dPct) > 30) {
+        flip.hidden = false;
+        const dir = dPct > 0 ? "↑" : "↓";
+        const phrase = dPct > 0
+          ? `Inflight signal <strong>raised</strong> the probability — the model just learned a prior stop was running late.`
+          : `Inflight signal <strong>ruled out</strong> the suspicion from A — prior stops were on time.`;
+        flip.innerHTML = `<strong>${dir} ${Math.abs(dPct).toFixed(1)} pp shift A→B.</strong> ${phrase}`;
+      } else {
+        flip.hidden = true;
+      }
+    }
+
+    const fmt = (v, n=2) => (v == null ? "—" : Number(v).toFixed(n));
     document.getElementById("d-service").textContent = row.service_id;
     document.getElementById("d-station").textContent = row.station_id;
     document.getElementById("d-date").textContent    = row.date;
-    document.getElementById("d-pos").textContent     = `${row.stop_order} (norm ${row.position_norm.toFixed(2)})`;
+    document.getElementById("d-pos").textContent     = `${row.stop_order ?? "—"}/${row.n_total_stops ?? "?"} (${(row.position_norm ?? 0).toFixed(2)})`;
     document.getElementById("d-class").textContent   = row.train_class_code;
-    document.getElementById("d-country").textContent = row.country;
-    document.getElementById("d-delay").textContent   = row.delay_min.toFixed(1) + " min";
+    document.getElementById("d-country").textContent = `${flagFor(row.country)} ${row.country}`;
+    document.getElementById("d-delay").textContent   = `${fmt(row.delay_min, 1)} min`;
     const truth = row.y_stop === 1 ? "DISRUPTED" : "ON-TIME";
-    const pred  = row.y_pred === 1 ? "DISRUPTED" : "ON-TIME";
+    const pred  = row.yp_b === 1 ? "DISRUPTED" : "ON-TIME";
     let outcomeTag = "tag";
-    if (row.y_stop === row.y_pred) outcomeTag += row.y_stop ? " success" : " primary";
-    else outcomeTag += row.y_pred ? " warning" : " danger";
+    if (row.y_stop === row.yp_b) outcomeTag += row.y_stop ? " success" : " primary";
+    else outcomeTag += row.yp_b ? " warning" : " danger";
     document.getElementById("d-outcome").innerHTML =
       `<span class="${outcomeTag}">truth ${truth} / pred ${pred}</span>`;
 
+    drawDrivers(row);
     drawKgBridge(row);
   }
 
-  document.getElementById("pred-random").addEventListener("click", () => show(pickRow(() => true)));
+  function animateProb(probId, fillId, p) {
+    const probEl = document.getElementById(probId);
+    const fillEl = document.getElementById(fillId);
+    const target = Math.max(0, Math.min(1, p));
+    fillEl.style.width = `${target * 100}%`;
+    // Tick the number from 0 to target over ~600ms
+    const start = performance.now();
+    function frame(t) {
+      const e = Math.min(1, (t - start) / 600);
+      const eased = 1 - Math.pow(1 - e, 3);          // ease-out cubic
+      probEl.textContent = (target * eased * 100).toFixed(1) + "%";
+      if (e < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // Surrogate "drivers" for this row — for each top-importance feature, compare
+  // its value to the dataset mean and direction-shade green/red.
+  function drawDrivers(row) {
+    const card = document.getElementById("pred-drivers-card");
+    const wrap = document.getElementById("pred-drivers");
+    // Pull top features from the SHAP report (scenario B winning) and compute
+    // per-row divergence from sample mean.
+    const topB = STATE.xai.scenarios.B.top_features.slice(0, 8);
+    const featDist = computeFeatureDist();
+    const html = topB.map(f => {
+      const v = row[f.name];
+      if (v == null || isNaN(v)) return "";
+      const stats = featDist[f.name];
+      if (!stats) return "";
+      const z = (v - stats.mean) / (stats.std || 1);
+      const direction = (f.name.match(/lag|delay|severity|cum_|max_|prev_|degree|n_active/i)) ? +1 : -1;
+      const sign = z * direction > 0 ? "up" : "down";
+      const widthPct = Math.min(48, Math.abs(z) * 14);
+      return `
+        <div class="driver-row">
+          <div class="driver-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
+          <div class="driver-bar-track">
+            <div class="driver-bar-fill ${sign}" style="width:${widthPct}%"></div>
+          </div>
+          <div class="driver-val">${Number(v).toFixed(2)}</div>
+        </div>`;
+    }).filter(Boolean).join("");
+    wrap.innerHTML = html || `<p class="muted">No feature snapshot for this row.</p>`;
+    card.style.display = "block";
+  }
+
+  // Compute mean+std for each feature on the sample (cached)
+  let _featDistCache = null;
+  function computeFeatureDist() {
+    if (_featDistCache) return _featDistCache;
+    const featNames = STATE.xai.scenarios.B.top_features.map(f => f.name);
+    const out = {};
+    for (const f of featNames) {
+      const vals = STATE.predictions.map(r => r[f]).filter(v => v != null && !isNaN(v));
+      if (!vals.length) continue;
+      const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+      const sq = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
+      out[f] = { mean, std: Math.sqrt(sq) || 1 };
+    }
+    _featDistCache = out;
+    return out;
+  }
+
+  // Wire filter inputs to live counter + auto-pick
+  ["change", "input"].forEach(ev => {
+    [country, bucket, service, date].forEach(el => el.addEventListener(ev, updateCounter));
+  });
+  updateCounter();
+
+  document.getElementById("pred-random").addEventListener("click", () => show(pickRow()));
   document.getElementById("pred-tp").addEventListener("click", () => show(
-    pickRow(r => r.y_stop === 1 && r.y_pred === 1 && r.p_disrupted > 0.95)
+    pickRow(r => r.y_stop === 1 && r.yp_b === 1 && r.p_b > 0.95)
   ));
   document.getElementById("pred-fp").addEventListener("click", () => show(
-    pickRow(r => r.y_stop === 0 && r.y_pred === 1 && r.p_disrupted > 0.7)
+    pickRow(r => r.y_stop === 0 && r.yp_b === 1 && r.p_b > 0.7)
+  ));
+  document.getElementById("pred-fn").addEventListener("click", () => show(
+    pickRow(r => r.y_stop === 1 && r.yp_b === 0 && r.delay_min > 30)
+  ));
+  document.getElementById("pred-flip").addEventListener("click", () => show(
+    pickRow(r => Math.abs((r.p_b ?? 0) - (r.p_a ?? 0)) > 0.4)
   ));
 }
 
@@ -692,8 +805,220 @@ function drawKgBridge(row) {
   document.getElementById("kg-output").innerHTML = "{\n" + html + "}";
 }
 
+// ── Cause-prediction playground ────────────────────────────────────────
+const CAUSE_COLORS = {
+  "rolling stock":   "#1E88E5",
+  "infrastructure":  "#d97706",
+  "external":        "#f472b6",
+  "accidents":       "#E53935",
+  "logistical":      "#fbbf24",
+  "engineering work":"#43A047",
+  "staff":           "#a855f7",
+  "weather":         "#06B6D4",
+  "unknown":         "#9ca3af",
+};
+const CAUSE_PILL = {
+  "rolling stock":   "rolling",
+  "infrastructure":  "infra",
+  "external":        "external",
+  "accidents":       "accident",
+  "logistical":      "logistical",
+  "engineering work":"engineering",
+  "staff":           "staff",
+  "weather":         "weather",
+  "unknown":         "unknown",
+};
+
+const CAUSE_STATE = {
+  data: null,
+  country: "NL",
+  filterWeather: -1,
+  filterHour: -1,
+  filterPosition: "",
+  filterClass: "",
+};
+
+async function loadCausePlay() {
+  const data = await fetch("data/cause_play.json").then(r => r.json());
+  CAUSE_STATE.data = data;
+  drawCausePlay();
+  wireCauseControls();
+}
+
+function _causeLabel(row) {
+  // For NL, the label is `cause_group` (ground truth); for IT/FI, `pred_cause_group`.
+  return row.pred_cause_group || row.cause_group || "unknown";
+}
+
+function _causePosition(row) {
+  if (row.is_origin === 1) return "origin";
+  if (row.is_terminus === 1) return "terminus";
+  const pn = row.position_norm;
+  if (pn == null) return "";
+  if (pn < 0.25) return "early";
+  if (pn < 0.75) return "mid";
+  return "late";
+}
+
+function filteredCauseRows() {
+  const cc = CAUSE_STATE.country;
+  const all = (CAUSE_STATE.data?.countries?.[cc]) || [];
+  return all.filter(r => {
+    if (CAUSE_STATE.filterWeather >= 0 && r.weather_severity !== CAUSE_STATE.filterWeather) return false;
+    if (CAUSE_STATE.filterHour    >= 0 && r.scheduled_arrival_hour !== CAUSE_STATE.filterHour) return false;
+    if (CAUSE_STATE.filterPosition) {
+      const p = _causePosition(r);
+      if (p !== CAUSE_STATE.filterPosition) return false;
+    }
+    if (CAUSE_STATE.filterClass !== "" && String(r.train_class_code) !== String(CAUSE_STATE.filterClass)) return false;
+    return true;
+  });
+}
+
+function drawCausePlay() {
+  const rows = filteredCauseRows();
+  document.getElementById("cause-stats").textContent =
+    `${rows.length.toLocaleString()} rows match these filters · ${CAUSE_STATE.country} sample size: ${(CAUSE_STATE.data.countries[CAUSE_STATE.country] || []).length.toLocaleString()}`;
+
+  const classes = CAUSE_STATE.data.classes;
+  const counts = Object.fromEntries(classes.map(c => [c, 0]));
+  for (const r of rows) {
+    const c = _causeLabel(r);
+    if (counts[c] !== undefined) counts[c]++;
+  }
+  const total = rows.length || 1;
+  const series = classes.map(c => ({
+    name: c,
+    value: counts[c] / total,
+    itemStyle: { color: CAUSE_COLORS[c] || "#888" },
+  })).sort((a, b) => b.value - a.value);
+
+  const el = document.getElementById("chart-cause-play");
+  if (!STATE.charts.causePlay) STATE.charts.causePlay = echarts.init(el);
+  STATE.charts.causePlay.setOption({
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" },
+                valueFormatter: v => (v * 100).toFixed(1) + "%" },
+    grid: { left: 130, right: 50, top: 20, bottom: 30 },
+    xAxis: { type: "value", max: Math.max(0.05, ...series.map(s => s.value * 1.1)),
+              axisLabel: { formatter: v => Math.round(v * 100) + "%" } },
+    yAxis: { type: "category", data: series.map(s => s.name),
+              axisLabel: { fontSize: 11 } },
+    series: [{
+      type: "bar", data: series,
+      label: { show: true, position: "right",
+                formatter: ({ value }) => (value * 100).toFixed(1) + "%",
+                fontFamily: "JetBrains Mono", fontSize: 11 },
+    }],
+  }, true);
+
+  // Sample table
+  const tbody = document.querySelector("#cause-table tbody");
+  const sample = rows.slice(0, 60);
+  tbody.innerHTML = sample.map((r, i) => {
+    const c = _causeLabel(r);
+    const conf = r.pred_max_proba != null ? (r.pred_max_proba * 100).toFixed(0) + "%" : "—";
+    return `<tr data-idx="${i}">
+      <td>${escapeHtml((r.service_id || "").slice(0, 18))}</td>
+      <td>${escapeHtml((r.station_id || "").slice(0, 14))}</td>
+      <td>${r.date || "—"}</td>
+      <td class="num">${r.delay_min != null ? Number(r.delay_min).toFixed(0) : "—"}</td>
+      <td class="num">${r.weather_severity ?? "—"}</td>
+      <td><span class="pill ${CAUSE_PILL[c] || 'unknown'}">${c}</span></td>
+      <td class="num">${conf}</td>
+    </tr>`;
+  }).join("");
+  tbody.querySelectorAll("tr").forEach(tr => {
+    tr.addEventListener("click", () => {
+      tbody.querySelectorAll("tr").forEach(t => t.classList.remove("selected"));
+      tr.classList.add("selected");
+      showCauseRow(sample[+tr.dataset.idx]);
+    });
+  });
+}
+
+function showCauseRow(row) {
+  const card = document.getElementById("cause-row-detail");
+  const c = _causeLabel(row);
+  const fields = [
+    ["service_id", row.service_id], ["station_id", row.station_id], ["date", row.date],
+    ["country", row.country], ["delay_min", row.delay_min],
+    ["weather_severity", row.weather_severity], ["temperature", row.temperature],
+    ["wind_speed", row.wind_speed], ["snow_depth", row.snow_depth],
+    ["precipitation", row.precipitation],
+    ["scheduled_arrival_hour", row.scheduled_arrival_hour],
+    ["scheduled_arrival_dow", row.scheduled_arrival_dow], ["month", row.month],
+    ["train_class_code", row.train_class_code], ["stop_order", row.stop_order],
+    ["position_norm", row.position_norm], ["n_total_stops", row.n_total_stops],
+    ["avg_historical_delay", row.avg_historical_delay], ["degree", row.degree],
+    ["station_lag1_rate", row.station_lag1_rate],
+    ["station_lag7_rate", row.station_lag7_rate],
+    ["train_station_lag7_rate", row.train_station_lag7_rate],
+  ];
+  const truth = row.cause_group ? `<div class="ki-row"><div class="ki-key">Truth (NL only)</div><div class="ki-val"><span class="kg-pill ${CAUSE_PILL[row.cause_group] || 'unknown'}">${row.cause_group}</span></div></div>` : "";
+  const conf = row.pred_max_proba != null ? `<div class="ki-row"><div class="ki-key">Confidence</div><div class="ki-val mono">${(row.pred_max_proba * 100).toFixed(1)}%</div></div>` : "";
+  card.style.display = "block";
+  card.querySelector("h3, #cause-row-content")?.remove?.();
+  document.getElementById("cause-row-content").innerHTML = `
+    <div class="ki-row"><div class="ki-key">Predicted cause</div><div class="ki-val"><span class="kg-pill ${CAUSE_PILL[c] || 'unknown'}">${c}</span></div></div>
+    ${conf}${truth}
+    <div style="margin-top:12px"><strong>Feature snapshot</strong></div>
+    <div class="cause-row-grid" style="margin-top:6px">
+      ${fields.filter(([k,v]) => v != null).map(([k,v]) =>
+        `<div class="field"><div class="field-label">${escapeHtml(k)}</div>
+         <div class="field-value">${typeof v === "number" ? v.toFixed(2) : escapeHtml(String(v))}</div></div>`
+      ).join("")}
+    </div>`;
+}
+
+function wireCauseControls() {
+  document.getElementById("cause-country-tabs").addEventListener("click", (e) => {
+    if (!e.target.dataset.country) return;
+    document.querySelectorAll("#cause-country-tabs button").forEach(b => b.classList.remove("active"));
+    e.target.classList.add("active");
+    CAUSE_STATE.country = e.target.dataset.country;
+    drawCausePlay();
+  });
+  const wEl = document.getElementById("cause-weather");
+  const wLab = document.getElementById("cause-weather-val");
+  wEl.value = -1;
+  wEl.addEventListener("input", () => {
+    const v = +wEl.value;
+    CAUSE_STATE.filterWeather = v < 0 ? -1 : v;
+    wLab.textContent = v < 0 ? "any" : `severity ${v}`;
+    drawCausePlay();
+  });
+  // The slider min is 0; we use a "reset" by double-clicking
+  wEl.addEventListener("dblclick", () => { wEl.value = 0; CAUSE_STATE.filterWeather = -1; wLab.textContent = "any"; drawCausePlay(); });
+
+  const hEl = document.getElementById("cause-hour");
+  const hLab = document.getElementById("cause-hour-val");
+  hEl.addEventListener("input", () => {
+    const v = +hEl.value;
+    CAUSE_STATE.filterHour = v;
+    hLab.textContent = v < 0 ? "any" : `${String(v).padStart(2,"0")}:00`;
+    drawCausePlay();
+  });
+  hEl.addEventListener("dblclick", () => {
+    hEl.value = 0; CAUSE_STATE.filterHour = -1; hLab.textContent = "any"; drawCausePlay();
+  });
+
+  document.getElementById("cause-position").addEventListener("change", (e) => {
+    CAUSE_STATE.filterPosition = e.target.value;
+    drawCausePlay();
+  });
+  document.getElementById("cause-class").addEventListener("change", (e) => {
+    CAUSE_STATE.filterClass = e.target.value;
+    drawCausePlay();
+  });
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
 // ── Boot ────────────────────────────────────────────────────────────────
-loadAll().catch(err => {
+loadAll().then(() => loadCausePlay()).catch(err => {
   console.error(err);
   document.querySelector("main").innerHTML =
     `<div class="card" style="border-color:var(--c-danger)"><h3>Failed to load dashboard data</h3><p class="muted">${err.message}</p><p class="muted">Make sure you're serving this folder over HTTP (not <code>file://</code>): try <code>python -m http.server</code> from <code>docs/website/</code>.</p></div>`;

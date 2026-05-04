@@ -290,25 +290,108 @@ print(f"  total sample: {len(kg_nodes)} nodes, {len(kg_edges)} edges")
 (OUT / "kg_sample.json").write_text(json.dumps(kg_sample, default=str))
 
 
-# ── 5. Sample predictions for the interactive panel (5K rows max) ─────────────
-print("[5/6] Baking predictions sample ...")
-preds_path = ROOT / "stop_level" / "models" / "_artefacts" / "xgb" / "B" / "preds_test.parquet"
-df = pd.read_parquet(preds_path)
+# ── 5. Sample predictions for the interactive panel ───────────────────────────
+print("[5/6] Baking predictions sample (with A vs B for same rows) ...")
+preds_b_path = ROOT / "stop_level" / "models" / "_artefacts" / "xgb" / "B" / "preds_test.parquet"
+preds_a_path = ROOT / "stop_level" / "models" / "_artefacts" / "xgb" / "A" / "preds_test.parquet"
+test_features = ROOT / "Data" / "stops" / "stops_test.parquet"
+df_b = pd.read_parquet(preds_b_path).rename(columns={"p_disrupted": "p_b", "y_pred": "yp_b"})
+df_a = pd.read_parquet(preds_a_path)[["service_id", "station_id", "p_disrupted", "y_pred"]].rename(
+    columns={"p_disrupted": "p_a", "y_pred": "yp_a"}
+)
+df = df_b.merge(df_a, on=["service_id", "station_id"], how="left")
+# Pull in selected feature values for the SHAP-context display
+feat_keep = ["service_id", "station_id", "weather_severity", "temperature",
+              "wind_speed", "precipitation", "snow_depth",
+              "avg_historical_delay", "degree", "betweenness_centrality",
+              "scheduled_arrival_hour", "scheduled_arrival_dow", "month",
+              "is_origin", "is_terminus", "n_total_stops",
+              "station_lag1_rate", "station_lag7_rate",
+              "train_station_lag7_rate", "prev_stop_actual_delay",
+              "max_actual_delay_so_far"]
+try:
+    feats = pd.read_parquet(test_features, columns=feat_keep)
+    df = df.merge(feats, on=["service_id", "station_id"], how="left")
+except Exception as e:
+    print(f"  warn: couldn't merge features: {e}")
 df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
-# Stratified sample: keep all 4 prototype categories balanced
-df["bucket"] = pd.cut(df["p_disrupted"], bins=[-0.01,0.25,0.5,0.75,1.01], labels=["low","mid_low","mid_high","high"])
+df["bucket"] = pd.cut(df["p_b"], bins=[-0.01, 0.25, 0.5, 0.75, 1.01],
+                      labels=["low", "mid_low", "mid_high", "high"])
 samples = []
 for b in df["bucket"].unique():
     sub = df[df["bucket"] == b]
     samples.append(sub.sample(n=min(1250, len(sub)), random_state=42))
 sample = pd.concat(samples, ignore_index=True)
-sample = sample[["service_id","station_id","country","date","train_class_code",
-                  "stop_order","position_norm","y_stop","delay_min",
-                  "p_disrupted","y_pred"]].copy()
-for c in ("p_disrupted","position_norm","delay_min"):
-    sample[c] = sample[c].round(3)
-print(f"  → {len(sample)} sample predictions")
+keep = [c for c in ["service_id","station_id","country","date","train_class_code",
+                     "stop_order","position_norm","y_stop","delay_min",
+                     "p_b","yp_b","p_a","yp_a"] + feat_keep if c in sample.columns]
+sample = sample[keep].copy()
+sample = sample.loc[:, ~sample.columns.duplicated()]
+# Round numeric columns for compact JSON
+for c in sample.columns:
+    if pd.api.types.is_float_dtype(sample[c]):
+        sample[c] = sample[c].round(3)
+print(f"  → {len(sample)} sample predictions (each with A and B + 21 features)")
 (OUT / "predictions_sample.json").write_text(sample.to_json(orient="records"))
+
+
+# ── 5b. Cause-prediction playground samples ───────────────────────────────────
+print("[5b/6] Baking cause prediction samples ...")
+cause_data = {"countries": {}, "global_stats": {}}
+
+# NL: use the labelled set (has ground truth)
+nl_lab_path = ROOT / "Data" / "causes" / "labels.parquet"
+if nl_lab_path.exists():
+    nl = pd.read_parquet(nl_lab_path)
+    nl["date"] = pd.to_datetime(nl["date"]).dt.strftime("%Y-%m-%d")
+    cols = [c for c in ["service_id", "station_id", "country", "date",
+                          "stop_order", "position_norm", "n_total_stops",
+                          "weather_severity", "temperature", "wind_speed",
+                          "snow_depth", "precipitation",
+                          "scheduled_arrival_hour", "scheduled_arrival_dow", "month",
+                          "train_class_code", "delay_min",
+                          "avg_historical_delay", "degree", "split",
+                          "cause_group"] if c in nl.columns]
+    nl_test = nl[nl["split"] == "test"] if "split" in nl.columns else nl
+    nl_sample = nl_test.sample(n=min(1500, len(nl_test)), random_state=42).copy()
+    for c in nl_sample.columns:
+        if pd.api.types.is_float_dtype(nl_sample[c]):
+            nl_sample[c] = nl_sample[c].round(3)
+    cause_data["countries"]["NL"] = nl_sample[cols].to_dict("records")
+
+# IT + FI: from v2 transfer parquets, joined with feature snapshots
+for cc, parquet_name in [("IT", "transfer_IT_preds_v2.parquet"),
+                           ("FI", "transfer_FI_preds_v2.parquet")]:
+    p = ROOT / "Data" / "causes" / parquet_name
+    if not p.exists():
+        continue
+    df = pd.read_parquet(p)
+    df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
+    sample = df.sample(n=min(1500, len(df)), random_state=42).copy()
+    # join with stops_test parquet to enrich with features
+    try:
+        feats = pd.read_parquet(test_features, columns=feat_keep + ["country"])
+        feats = feats[feats["country"] == cc].copy()
+        sample = sample.merge(feats, on=["service_id", "station_id"], how="left")
+        sample = sample.loc[:, ~sample.columns.duplicated()]
+    except Exception as e:
+        print(f"  warn: feature merge for {cc} failed: {e}")
+    for c in sample.columns:
+        if pd.api.types.is_float_dtype(sample[c]):
+            sample[c] = sample[c].round(3)
+    cause_data["countries"][cc] = sample.to_dict("records")
+    print(f"  {cc}: {len(sample)} cause samples")
+
+# Global cause class list (consistent ordering)
+cause_data["classes"] = [
+    "rolling stock", "infrastructure", "external", "accidents",
+    "logistical", "engineering work", "staff", "weather", "unknown"
+]
+# Per-country distributions from cause_transfer_v2
+v2_t = json.load(open(ROOT / "stop_level" / "results" / "cause_transfer_v2.json"))
+cause_data["transfer"] = v2_t
+(OUT / "cause_play.json").write_text(json.dumps(cause_data, default=str))
+print(f"  Total NL/IT/FI cause samples written")
 
 
 # ── 6. Manifest of available figures ──────────────────────────────────────────
