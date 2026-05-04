@@ -26,7 +26,7 @@ The KG is not a model in its own right; it's an integration layer between the SH
 \begin{enumerate}
     \item \textbf{BiLSTM was deferred} (\cref{sec:models}). The architecture is sound at synthetic scale but \texttt{\_pack\_sequences} OOMs on full data. A batched generator-based packer would solve this.
     \item \textbf{Italy zero-fill weather bug.} \texttt{lib\_italy.py} zero-fills missing weather columns instead of preserving \texttt{NaN}, which contaminates downstream feature distributions and is the root cause of the v2 IT \emph{engineering work} mode collapse.
-    \item \textbf{Sparksee binary not available.} The Sparksee licence file ships with the project but the binary distribution is gated behind a registered-user download. We use Kuzu as a Cypher-portable substitute.
+    \item \textbf{Sparksee runs in evaluation mode.} The Sparksee 5.2.3 jar is pulled from Maven Central and runs without a licence string, which caps each edge type at \SI{1}{M} entries. The build script auto-falls back to the FI\_HKH hub subgraph (98.5~K \texttt{STOPS\_AT} edges); holders of an academic / commercial licence can drop a \texttt{sparksee.cfg} with their licence string and load the full~\SI{16.59}{M}-edge graph without any code changes.
     \item \textbf{Cause label noise.} Only~32\,\% of NL disrupted stops have a matching RDT incident-log record. The remaining stops are disrupted but unlabelled -- our ``labelled set'' is a biased subsample of the full disrupted population.
     \item \textbf{Static cross-country feature scales.} Open-Meteo (daily aggregates) and FMI (hourly observations) produce numerically different precipitation distributions, breaking transfer of weather-related cause predictions.
 \end{enumerate}

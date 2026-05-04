@@ -103,7 +103,10 @@ The full pipeline is reproducible from a fresh checkout with three shell command
 # Phase 0 — install dependencies (one-time)
 pip install pandas numpy scikit-learn lightgbm xgboost shap matplotlib seaborn \
             pyarrow networkx jupyter papermill nbconvert torch torch_geometric \
-            openmeteo-requests requests-cache retry-requests kaggle pytest kuzu
+            openmeteo-requests requests-cache retry-requests kaggle pytest \
+            jpype1 install-jdk
+# (jpype1 + install-jdk drive Sparksee 5.2.3 from Maven Central; see
+# scripts/install_sparksee.sh which fetches the jar and a portable JDK.)
 
 # Phase 0.5 — download raw data (one-time, ~5.7 GB)
 bash scripts/download_data.sh

@@ -773,12 +773,13 @@ function wirePredict() {
   ));
 }
 
-// ── KG bridge mock (since we can't run Kuzu from the browser) ───────────
+// ── KG bridge mock (since we can't run Sparksee from the browser) ───────
 function drawKgBridge(row) {
   const card = document.getElementById("kg-card");
   card.style.display = "block";
-  // Synthesise a plausible bridge result from the data we have
-  // (if this were running server-side, we'd query Kuzu here).
+  // Synthesise a plausible bridge result from the data we have. If this
+  // were running server-side, we'd run the same query through
+  // stop_level/build_kg.py::run_bridge_demo against Sparksee 5.2.3.
   const station = STATE.stations.find(s => s.id === row.station_id);
   const neighbours = STATE.stations
     .filter(s => s.country === row.country && s.id !== row.station_id)
