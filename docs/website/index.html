@@ -130,8 +130,26 @@
   </div>
 
   <div class="grid grid-2" style="margin-top:24px">
-    <div class="chart" id="chart-cause-perclass"></div>
-    <div class="chart" id="chart-cause-transfer"></div>
+    <div>
+      <div class="chart" id="chart-cause-perclass"></div>
+      <div class="plot-explainer">
+        <div class="plot-explainer-icon">📊</div>
+        <div class="plot-explainer-body">
+          <p><strong>What you see:</strong> per-cause F1 score (higher = better) for the v1 baseline vs the v2 upgrade. Each pair of bars is one disruption cause.</p>
+          <p><strong>Why it matters:</strong> the headline jump is <code>weather</code> — v1 never predicted it (F1 = 0.000), v2 catches it (F1 = 0.509) thanks to the <code>winter_x_severe_weather</code> interaction feature.</p>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="chart" id="chart-cause-transfer"></div>
+      <div class="plot-explainer">
+        <div class="plot-explainer-icon">🌍</div>
+        <div class="plot-explainer-body">
+          <p><strong>What you see:</strong> when the NL-trained v2 model is applied to Italian and Finnish stops (no labels there), this is the cause mix it predicts.</p>
+          <p><strong>How to read:</strong> a healthy transfer should look broadly plausible per country. <code>rolling stock</code> dominates IT, <code>infrastructure</code> rises in FI — but note v2 never predicts <em>weather</em> on FI despite F1 = 0.509 inside NL: a known feature-scale shift documented in §10 of the paper.</p>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -318,8 +336,20 @@
   <div class="grid grid-2" style="margin-top:18px">
     <div class="card">
       <h3>Predicted cause distribution</h3>
-      <div class="chart" id="chart-cause-play" style="height:340px"></div>
+      <div class="chart-with-overlay" id="cause-play-wrap">
+        <div class="chart" id="chart-cause-play" style="height:340px"></div>
+        <div class="chart-loading-overlay" aria-hidden="true"><div class="spin"></div></div>
+      </div>
       <div class="cause-stats muted" id="cause-stats">— rows match these filters</div>
+
+      <div class="plot-explainer">
+        <div class="plot-explainer-icon">💡</div>
+        <div class="plot-explainer-body">
+          <p><strong>What you see:</strong> bars are the <em>fraction</em> of matching stops the v2 model assigns to each cause. They sum to 100 % of the rows that pass your filters.</p>
+          <p><strong>How to play:</strong> nudge the sliders or pick a country tab — chart and table re-render live. Switching countries is <em>cached</em>, so subsequent flips are instant.</p>
+          <p><strong>Caveat:</strong> NL bars use the <em>ground-truth</em> cause label; IT and FI bars are <em>predicted</em> (no labels exist there). Treat the two as different things — see the trust section in the paper.</p>
+        </div>
+      </div>
     </div>
 
     <div class="card">
@@ -334,6 +364,14 @@
           </tr></thead>
           <tbody></tbody>
         </table>
+      </div>
+
+      <div class="plot-explainer">
+        <div class="plot-explainer-icon">🔍</div>
+        <div class="plot-explainer-body">
+          <p><strong>What you see:</strong> up to 60 individual stops drawn from the matching set, with the model's predicted cause and its confidence (max-class probability).</p>
+          <p><strong>Pro tip:</strong> low confidence (under ~30 %) often means the model is split between 2–3 causes — click the row to see the full feature vector and decide for yourself.</p>
+        </div>
       </div>
     </div>
   </div>

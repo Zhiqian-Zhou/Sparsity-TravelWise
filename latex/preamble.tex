@@ -1,75 +1,96 @@
 % latex/preamble.tex
-% Modern applied-ML paper preamble
+% =============================================================================
+% Preamble for the Sparsity-TravelWise applied-ML pipeline paper.
+%
+% Design philosophy: keep this file lean and fast-compiling on Overleaf's
+% free tier (single-pass < 30 s). Heavy / shell-escape packages that
+% previously caused compile-timeouts have been removed:
+%
+%   • minted        → listings (no Pygments / shell-escape needed)
+%   • biblatex+biber → natbib + bibtex (Overleaf fall-back was slow anyway)
+%   • todonotes      → unused, removed
+%   • algorithm+algpseudocode → unused, removed
+%   • microtype      → not loaded (visual gain not worth compile cost)
+%
+% Section files live in ./sections/01_introduction.tex … 12_conclusion.tex
+% plus A_appendix.tex. All figures are physical PNGs under ./figures/
+% (no symlinks → Overleaf-portable).
+% =============================================================================
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage[margin=1in]{geometry}
-\usepackage{microtype}
 
-% Math
+% ── Maths ────────────────────────────────────────────────────────────────────
 \usepackage{amsmath, amssymb, amsfonts, mathtools}
 
-% Figures + subfigures
+% ── Figures + sub-figures + floats ───────────────────────────────────────────
 \usepackage{graphicx}
 \usepackage{subcaption}
 \usepackage{float}
 \usepackage{caption}
+% NOTE: caption v3 deprecated `bold`; use `bf` instead.
 \captionsetup[figure]{font=small, labelfont=bf, justification=raggedright,
                        singlelinecheck=false}
 \captionsetup[table]{font=small, labelfont=bf, justification=raggedright,
                       singlelinecheck=false}
 
-% Tables
+% ── Tables ────────────────────────────────────────────────────────────────────
 \usepackage{booktabs}
 \usepackage{array, multirow, makecell, tabularx}
 \usepackage{siunitx}
 \sisetup{detect-weight=true,
-          group-separator={,}, group-minimum-digits=4}
+          group-separator={,}, group-minimum-digits=4,
+          round-mode=places, round-precision=3}
 
-% SI units & numerical formatting
-\sisetup{round-mode=places, round-precision=3}
-
-% Code listings (graceful fallback if minted/pygments not available)
-\IfFileExists{minted.sty}{%
-  \usepackage[cache=false]{minted}
-  \setminted{fontsize=\small, breaklines=true, frame=single, framesep=2mm,
-              bgcolor=gray!5}
-}{%
-  \usepackage{listings}
-  \lstset{language=Python, breaklines=true, basicstyle=\ttfamily\small,
-           keywordstyle=\color{blue}, commentstyle=\color{gray},
-           frame=single, numbers=left, numberstyle=\tiny\color{gray}}
+% ── Code listings (lightweight; no shell-escape) ─────────────────────────────
+% We previously used `minted`, which calls Pygments and tripped the
+% Overleaf compile timeout. `listings` is pure-LaTeX and fast.
+\usepackage{listings}
+\usepackage{xcolor}
+\definecolor{lstbg}{RGB}{248,250,252}        % near-white code background
+\definecolor{lstkw}{RGB}{30,64,175}          % blue keyword
+\definecolor{lstcm}{RGB}{100,116,139}        % grey comment
+\definecolor{lststr}{RGB}{5,150,105}         % green string
+\lstdefinelanguage{Cypher}{
+  morekeywords={MATCH,OPTIONAL,WHERE,RETURN,AS,COUNT,COLLECT,
+                  DISTINCT,CREATE,NODE,REL,TABLE,PRIMARY,KEY,FROM,TO,
+                  COPY,LOAD,WITH,UNWIND,date,duration,INTERVAL},
+  sensitive=true,
+  morecomment=[l]{//}, morecomment=[s]{/*}{*/},
+  morestring=[b]', morestring=[b]"
+}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{lstkw}\bfseries,
+  commentstyle=\color{lstcm}\itshape,
+  stringstyle=\color{lststr},
+  backgroundcolor=\color{lstbg},
+  frame=single, framerule=0.4pt, rulecolor=\color{lstcm!30},
+  framesep=4pt, xleftmargin=4pt, xrightmargin=4pt,
+  breaklines=true, breakatwhitespace=true,
+  showstringspaces=false, columns=fullflexible,
+  upquote=true, escapeinside={(*}{*)},
+  tabsize=2,
 }
 
-% Algorithms
-\usepackage{algorithm}
-\usepackage{algpseudocode}
+% ── Bibliography (natbib + bibtex — ~3× faster than biblatex/biber) ──────────
+\usepackage[numbers, sort&compress, square]{natbib}
+\bibliographystyle{plainnat}
 
-% Bibliography (biblatex with bibtex backend — biber not available in our minimal TL install)
-\usepackage[style=numeric, backend=bibtex, sorting=none, maxbibnames=20]{biblatex}
-\addbibresource{references.bib}
-
-% Hyperlinks (load before cleveref)
-\usepackage[colorlinks=true, linkcolor=blue!60!black,
-            citecolor=blue!60!black, urlcolor=blue!60!black]{hyperref}
+% ── Hyperlinks (load BEFORE cleveref) ────────────────────────────────────────
+\usepackage[colorlinks=true,
+            linkcolor=blue!60!black,
+            citecolor=blue!60!black,
+            urlcolor=blue!60!black]{hyperref}
 \usepackage[capitalise, noabbrev]{cleveref}
 
-% Misc
-\usepackage{xcolor}
+% ── Lists, headers, paragraph spacing ────────────────────────────────────────
 \usepackage{enumitem}
 \setlist{nosep}
 \usepackage{parskip}
 \usepackage{textcomp}
 \usepackage{rotating}
-
-% Custom math operators
-\DeclareMathOperator{\E}{\mathbb{E}}
-\DeclareMathOperator*{\argmax}{arg\,max}
-\DeclareMathOperator*{\argmin}{arg\,min}
-\newcommand{\R}{\mathbb{R}}
-\newcommand{\N}{\mathbb{N}}
-
-% Header / footer
 \usepackage{fancyhdr}
 \pagestyle{fancy}
 \fancyhf{}
@@ -77,6 +98,12 @@
 \fancyhead[R]{\small \thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 
-% Graphics paths — all figures live under ./figures/ as physical copies
-% (no symlinks; the latex/ folder is fully self-contained for Overleaf).
+% ── Math operators / shortcuts ───────────────────────────────────────────────
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+
+% ── Graphics path — all figures live under ./figures/ as physical copies ─────
 \graphicspath{{./figures/}}

@@ -47,6 +47,7 @@ function applyTheme(t) {
     drawShap();
     drawCauseCharts();
   }
+  if (STATE.causePlayReady) drawCausePlay();
 }
 document.getElementById("theme-toggle").addEventListener("click", () => {
   const cur = document.documentElement.getAttribute("data-theme") || "light";
@@ -836,103 +837,220 @@ const CAUSE_STATE = {
   filterHour: -1,
   filterPosition: "",
   filterClass: "",
+  // Per-country pre-computed labels + per-country LRU cache for filter results.
+  // labels[cc][i] = the cause label for row i (avoids recomputing pred_cause_group||cause_group||unknown).
+  // positions[cc][i] = the bucket name for row i (origin|early|mid|late|terminus|"").
+  labels: {},
+  positions: {},
+  // Memoized filter -> {indices, counts, total} keyed by `cc|w|h|p|cls`.
+  cache: new Map(),
+  // Cap memo cache at ~80 keys (3 countries × ~25 distinct filter combos in normal use).
+  cacheLimit: 80,
+  // Pending requestAnimationFrame handle so rapid slider drags coalesce into one paint.
+  rafHandle: null,
+  // Bumped on every redraw — used to discard stale renders if user races filters.
+  drawTicket: 0,
 };
 
 async function loadCausePlay() {
-  const data = await fetch("data/cause_play.json").then(r => r.json());
+  const wrap = document.getElementById("cause-play-wrap");
+  if (wrap) wrap.classList.add("loading");
+  // Browser HTTP cache + server cache headers handle the network side.
+  // Once fetched, we precompute per-row label and position buckets so country
+  // switches and filter changes never have to touch the raw `pred_cause_group`
+  // / `position_norm` lookup paths again.
+  const data = await fetch("data/cause_play.json", { cache: "force-cache" }).then(r => r.json());
   CAUSE_STATE.data = data;
+  _precomputeCauseRows();
+  STATE.causePlayReady = true;
+  if (wrap) wrap.classList.remove("loading");
   drawCausePlay();
   wireCauseControls();
 }
 
+function _precomputeCauseRows() {
+  const out_l = {}, out_p = {};
+  for (const cc of Object.keys(CAUSE_STATE.data.countries || {})) {
+    const rows = CAUSE_STATE.data.countries[cc];
+    const labels = new Array(rows.length);
+    const positions = new Array(rows.length);
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      labels[i] = r.pred_cause_group || r.cause_group || "unknown";
+      if (r.is_origin === 1) positions[i] = "origin";
+      else if (r.is_terminus === 1) positions[i] = "terminus";
+      else {
+        const pn = r.position_norm;
+        if (pn == null) positions[i] = "";
+        else if (pn < 0.25) positions[i] = "early";
+        else if (pn < 0.75) positions[i] = "mid";
+        else positions[i] = "late";
+      }
+    }
+    out_l[cc] = labels;
+    out_p[cc] = positions;
+  }
+  CAUSE_STATE.labels = out_l;
+  CAUSE_STATE.positions = out_p;
+}
+
 function _causeLabel(row) {
-  // For NL, the label is `cause_group` (ground truth); for IT/FI, `pred_cause_group`.
   return row.pred_cause_group || row.cause_group || "unknown";
 }
 
-function _causePosition(row) {
-  if (row.is_origin === 1) return "origin";
-  if (row.is_terminus === 1) return "terminus";
-  const pn = row.position_norm;
-  if (pn == null) return "";
-  if (pn < 0.25) return "early";
-  if (pn < 0.75) return "mid";
-  return "late";
+function _cacheKey() {
+  return [
+    CAUSE_STATE.country,
+    CAUSE_STATE.filterWeather,
+    CAUSE_STATE.filterHour,
+    CAUSE_STATE.filterPosition,
+    CAUSE_STATE.filterClass,
+  ].join("|");
 }
 
-function filteredCauseRows() {
+function _computeCauseFilter() {
+  const key = _cacheKey();
+  const memo = CAUSE_STATE.cache.get(key);
+  if (memo) return memo;
+
   const cc = CAUSE_STATE.country;
-  const all = (CAUSE_STATE.data?.countries?.[cc]) || [];
-  return all.filter(r => {
-    if (CAUSE_STATE.filterWeather >= 0 && r.weather_severity !== CAUSE_STATE.filterWeather) return false;
-    if (CAUSE_STATE.filterHour    >= 0 && r.scheduled_arrival_hour !== CAUSE_STATE.filterHour) return false;
-    if (CAUSE_STATE.filterPosition) {
-      const p = _causePosition(r);
-      if (p !== CAUSE_STATE.filterPosition) return false;
-    }
-    if (CAUSE_STATE.filterClass !== "" && String(r.train_class_code) !== String(CAUSE_STATE.filterClass)) return false;
-    return true;
+  const rows = (CAUSE_STATE.data?.countries?.[cc]) || [];
+  const positions = CAUSE_STATE.positions[cc];
+  const labels = CAUSE_STATE.labels[cc];
+  const wf = CAUSE_STATE.filterWeather;
+  const hf = CAUSE_STATE.filterHour;
+  const pf = CAUSE_STATE.filterPosition;
+  const clsf = CAUSE_STATE.filterClass;
+  const classes = CAUSE_STATE.data.classes;
+  const counts = Object.fromEntries(classes.map(c => [c, 0]));
+
+  const indices = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (wf >= 0 && r.weather_severity !== wf) continue;
+    if (hf >= 0 && r.scheduled_arrival_hour !== hf) continue;
+    if (pf && positions[i] !== pf) continue;
+    if (clsf !== "" && String(r.train_class_code) !== String(clsf)) continue;
+    indices.push(i);
+    const c = labels[i];
+    if (counts[c] !== undefined) counts[c]++;
+  }
+
+  const result = { indices, counts, total: indices.length };
+
+  // LRU-ish: evict oldest if over the cap.
+  if (CAUSE_STATE.cache.size >= CAUSE_STATE.cacheLimit) {
+    const firstKey = CAUSE_STATE.cache.keys().next().value;
+    if (firstKey) CAUSE_STATE.cache.delete(firstKey);
+  }
+  CAUSE_STATE.cache.set(key, result);
+  return result;
+}
+
+function _markCachedTabs() {
+  // Visual hint: tab gets a green "•" once that country's first filter is in cache.
+  const tabs = document.querySelectorAll("#cause-country-tabs button");
+  tabs.forEach(b => {
+    const cc = b.dataset.country;
+    let hit = false;
+    for (const k of CAUSE_STATE.cache.keys()) { if (k.startsWith(cc + "|")) { hit = true; break; } }
+    b.classList.toggle("cached", hit);
   });
 }
 
+// Coalesce rapid slider events into one render per animation frame.
 function drawCausePlay() {
-  const rows = filteredCauseRows();
-  document.getElementById("cause-stats").textContent =
-    `${rows.length.toLocaleString()} rows match these filters · ${CAUSE_STATE.country} sample size: ${(CAUSE_STATE.data.countries[CAUSE_STATE.country] || []).length.toLocaleString()}`;
+  if (CAUSE_STATE.rafHandle) cancelAnimationFrame(CAUSE_STATE.rafHandle);
+  CAUSE_STATE.rafHandle = requestAnimationFrame(_renderCausePlay);
+}
 
-  const classes = CAUSE_STATE.data.classes;
-  const counts = Object.fromEntries(classes.map(c => [c, 0]));
-  for (const r of rows) {
-    const c = _causeLabel(r);
-    if (counts[c] !== undefined) counts[c]++;
-  }
-  const total = rows.length || 1;
-  const series = classes.map(c => ({
-    name: c,
-    value: counts[c] / total,
-    itemStyle: { color: CAUSE_COLORS[c] || "#888" },
-  })).sort((a, b) => b.value - a.value);
+function _renderCausePlay() {
+  CAUSE_STATE.rafHandle = null;
+  const ticket = ++CAUSE_STATE.drawTicket;
+  if (!CAUSE_STATE.data) return;
+  const wrap = document.getElementById("cause-play-wrap");
+  const wasCached = CAUSE_STATE.cache.has(_cacheKey());
+  if (!wasCached && wrap) wrap.classList.add("loading");
 
-  const el = document.getElementById("chart-cause-play");
-  if (!STATE.charts.causePlay) STATE.charts.causePlay = echarts.init(el);
-  STATE.charts.causePlay.setOption({
-    tooltip: { trigger: "axis", axisPointer: { type: "shadow" },
-                valueFormatter: v => (v * 100).toFixed(1) + "%" },
-    grid: { left: 130, right: 50, top: 20, bottom: 30 },
-    xAxis: { type: "value", max: Math.max(0.05, ...series.map(s => s.value * 1.1)),
-              axisLabel: { formatter: v => Math.round(v * 100) + "%" } },
-    yAxis: { type: "category", data: series.map(s => s.name),
-              axisLabel: { fontSize: 11 } },
-    series: [{
-      type: "bar", data: series,
-      label: { show: true, position: "right",
-                formatter: ({ value }) => (value * 100).toFixed(1) + "%",
-                fontFamily: "JetBrains Mono", fontSize: 11 },
-    }],
-  }, true);
+  // Run heavy compute in a microtask so the loading overlay paints first.
+  queueMicrotask(() => {
+    if (ticket !== CAUSE_STATE.drawTicket) return;
+    const { indices, counts, total } = _computeCauseFilter();
+    if (ticket !== CAUSE_STATE.drawTicket) return;
 
-  // Sample table
-  const tbody = document.querySelector("#cause-table tbody");
-  const sample = rows.slice(0, 60);
-  tbody.innerHTML = sample.map((r, i) => {
-    const c = _causeLabel(r);
-    const conf = r.pred_max_proba != null ? (r.pred_max_proba * 100).toFixed(0) + "%" : "—";
-    return `<tr data-idx="${i}">
-      <td>${escapeHtml((r.service_id || "").slice(0, 18))}</td>
-      <td>${escapeHtml((r.station_id || "").slice(0, 14))}</td>
-      <td>${r.date || "—"}</td>
-      <td class="num">${r.delay_min != null ? Number(r.delay_min).toFixed(0) : "—"}</td>
-      <td class="num">${r.weather_severity ?? "—"}</td>
-      <td><span class="pill ${CAUSE_PILL[c] || 'unknown'}">${c}</span></td>
-      <td class="num">${conf}</td>
-    </tr>`;
-  }).join("");
-  tbody.querySelectorAll("tr").forEach(tr => {
-    tr.addEventListener("click", () => {
-      tbody.querySelectorAll("tr").forEach(t => t.classList.remove("selected"));
-      tr.classList.add("selected");
-      showCauseRow(sample[+tr.dataset.idx]);
+    const cc = CAUSE_STATE.country;
+    const rows = CAUSE_STATE.data.countries[cc];
+    const labels = CAUSE_STATE.labels[cc];
+
+    document.getElementById("cause-stats").textContent =
+      `${total.toLocaleString()} rows match these filters · ${cc} sample size: ${rows.length.toLocaleString()}`;
+
+    const classes = CAUSE_STATE.data.classes;
+    const totalSafe = total || 1;
+    const series = classes.map(c => ({
+      name: c,
+      value: counts[c] / totalSafe,
+      itemStyle: { color: CAUSE_COLORS[c] || "#888" },
+    })).sort((a, b) => b.value - a.value);
+
+    const el = document.getElementById("chart-cause-play");
+    if (!STATE.charts.causePlay) STATE.charts.causePlay = echarts.init(el);
+    // Pass merge=false (true second arg) only on the first paint — subsequent
+    // updates use ECharts' diff path which is much cheaper.
+    STATE.charts.causePlay.setOption({
+      animationDuration: 200,
+      animationDurationUpdate: 200,
+      tooltip: { trigger: "axis", axisPointer: { type: "shadow" },
+                  valueFormatter: v => (v * 100).toFixed(1) + "%" },
+      grid: { left: 130, right: 50, top: 20, bottom: 30 },
+      xAxis: { type: "value", max: Math.max(0.05, ...series.map(s => s.value * 1.1)),
+                axisLabel: { formatter: v => Math.round(v * 100) + "%" } },
+      yAxis: { type: "category", data: series.map(s => s.name),
+                axisLabel: { fontSize: 11 } },
+      series: [{
+        type: "bar", data: series,
+        label: { show: true, position: "right",
+                  formatter: ({ value }) => (value * 100).toFixed(1) + "%",
+                  fontFamily: "JetBrains Mono", fontSize: 11 },
+      }],
     });
+
+    // Sample table — render up to 60 rows. Build one big string then innerHTML
+    // is faster than 60 separate DOM inserts.
+    const sampleN = Math.min(60, indices.length);
+    const tbody = document.querySelector("#cause-table tbody");
+    const parts = new Array(sampleN);
+    for (let i = 0; i < sampleN; i++) {
+      const idx = indices[i];
+      const r = rows[idx];
+      const c = labels[idx];
+      const conf = r.pred_max_proba != null ? (r.pred_max_proba * 100).toFixed(0) + "%" : "—";
+      parts[i] = `<tr data-idx="${idx}">
+        <td>${escapeHtml((r.service_id || "").slice(0, 18))}</td>
+        <td>${escapeHtml((r.station_id || "").slice(0, 14))}</td>
+        <td>${r.date || "—"}</td>
+        <td class="num">${r.delay_min != null ? Number(r.delay_min).toFixed(0) : "—"}</td>
+        <td class="num">${r.weather_severity ?? "—"}</td>
+        <td><span class="pill ${CAUSE_PILL[c] || 'unknown'}">${c}</span></td>
+        <td class="num">${conf}</td>
+      </tr>`;
+    }
+    tbody.innerHTML = parts.join("");
+    // One delegated listener instead of 60 individual ones.
+    if (!tbody.dataset.bound) {
+      tbody.addEventListener("click", (e) => {
+        const tr = e.target.closest("tr[data-idx]");
+        if (!tr) return;
+        tbody.querySelectorAll("tr.selected").forEach(t => t.classList.remove("selected"));
+        tr.classList.add("selected");
+        const ccNow = CAUSE_STATE.country;
+        showCauseRow(CAUSE_STATE.data.countries[ccNow][+tr.dataset.idx]);
+      });
+      tbody.dataset.bound = "1";
+    }
+
+    if (wrap) wrap.classList.remove("loading");
+    _markCachedTabs();
   });
 }
 
@@ -1018,7 +1136,12 @@ function escapeHtml(s) {
 }
 
 // ── Boot ────────────────────────────────────────────────────────────────
-loadAll().then(() => loadCausePlay()).catch(err => {
+// Kick off both fetch waves in parallel — the cause-play 3 MB JSON used to
+// load only AFTER `loadAll` finished, which delayed the playground's first
+// paint by ~the longer of the two waterfalls. Now both run concurrently and
+// the playground renders as soon as its own data arrives.
+const causePlayBoot = loadCausePlay().catch(err => console.error("cause-play load failed:", err));
+loadAll().catch(err => {
   console.error(err);
   document.querySelector("main").innerHTML =
     `<div class="card" style="border-color:var(--c-danger)"><h3>Failed to load dashboard data</h3><p class="muted">${err.message}</p><p class="muted">Make sure you're serving this folder over HTTP (not <code>file://</code>): try <code>python -m http.server</code> from <code>docs/website/</code>.</p></div>`;

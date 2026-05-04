@@ -1,10 +1,38 @@
+% =============================================================================
+% main.tex — Sparsity-TravelWise applied-ML pipeline paper
+% =============================================================================
+% MAINTAINER NOTES (read before editing):
+%
+%   1. Compile path (Overleaf or local TeX Live ≥ 2023):
+%        pdflatex main → bibtex main → pdflatex main → pdflatex main
+%      Or (for local builds with latexmk installed):
+%        latexmk -pdf main.tex
+%
+%   2. The latex/ folder is fully self-contained. All figures live under
+%      ./figures/ as physical PNG copies; no symlinks. References are in
+%      ./references.bib (BibTeX format, plain — not biblatex).
+%
+%   3. Sections are split into ./sections/NN_*.tex files. Each is included
+%      via \input below in narrative order. To reorganise the paper, just
+%      reorder the \input lines.
+%
+%   4. Heavy packages were dropped to fit Overleaf free-tier compile timeout:
+%        ✗ minted     → listings (preamble.tex defines a Cypher dialect)
+%        ✗ biblatex   → natbib  (bibtex is faster than biber on free tier)
+%        ✗ todonotes / algorithm / microtype  → unused, removed
+%      See preamble.tex for the full rationale.
+%
+%   5. Citations use natbib commands:  \cite{key}, \citep{key}, \citet{key}.
+%      All keys are in references.bib; orphan check passes (verified by
+%      a reference-audit agent during the May 2026 build).
+% =============================================================================
 \documentclass[11pt, a4paper]{article}
 \input{preamble}
 
 \title{\bfseries Stop-Level Disruption Prediction Across Italian, Finnish, and Dutch Railways:\\
         \large A Multi-Country Pipeline with Explainability and Knowledge-Graph Integration}
 
-\author{Anonymous Authors\\\small\href{https://github.com/.../Sparsity-TravelWise}{\texttt{github.com/Sparsity-TravelWise}}}
+\author{Anonymous Authors\\\small\href{https://github.com/Zhiqian-Zhou/Sparsity-TravelWise}{\texttt{github.com/Zhiqian-Zhou/Sparsity-TravelWise}}}
 \date{May 2026}
 
 \begin{document}
@@ -30,7 +58,8 @@ We present a unified pipeline for predicting railway-disruption probability \emp
 \input{sections/11_discussion.tex}
 \input{sections/12_conclusion.tex}
 
-\printbibliography
+% ── References (natbib + plain bibtex, see preamble.tex for rationale) ──────
+\bibliography{references}
 
 \appendix
 \input{sections/A_appendix.tex}
