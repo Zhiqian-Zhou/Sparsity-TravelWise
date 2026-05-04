@@ -59,16 +59,19 @@ applyTheme(STATE.theme === "auto" ? null : STATE.theme);
 
 // ── Data load (parallel) ───────────────────────────────────────────────
 async function loadAll() {
-  const [b, x, c, s, p, kg] = await Promise.all([
+  const fetches = [
     fetch("data/benchmark.json").then(r => r.json()),
     fetch("data/xai.json").then(r => r.json()),
     fetch("data/causes.json").then(r => r.json()),
     fetch("data/stations.json").then(r => r.json()),
     fetch("data/predictions_sample.json").then(r => r.json()),
     fetch("data/kg_sample.json").then(r => r.json()),
-  ]);
+  ];
+  const meta = fetch("data/stations_meta.json").then(r => r.ok ? r.json() : null).catch(() => null);
+  const [b, x, c, s, p, kg, m] = await Promise.all([...fetches, meta]);
   STATE.benchmark = b; STATE.xai = x; STATE.causes = c;
   STATE.stations = s;  STATE.predictions = p; STATE.kg = kg;
+  STATE.stationsMeta = m || {};
   hydrateHero();
   drawBenchmarkBars();
   drawBreakdowns();
@@ -76,8 +79,6 @@ async function loadAll() {
   drawCauseCharts();
   drawMap();
   wirePredict();
-  drawKgSchema();
-  drawKgSample();
 }
 
 // ── Hero stats ─────────────────────────────────────────────────────────
@@ -318,29 +319,60 @@ function applyMapFilter() {
     !STATE.mapCountry || s.country === STATE.mapCountry
   );
   const markers = filtered.map(s => {
-    // size by log(degree); colour by country; fill saturation by avg_delay
     const radius = 3 + Math.log2(1 + (s.degree || 1)) * 1.6;
-    const t = Math.min(1, (s.delay || 0) / 8);                  // 0..1 normalised delay
-    const baseHex = COUNTRY_COLOR[s.country] || "#888888";
+    const t = Math.min(1, (s.delay || 0) / 8);
+    const isIntl = s.domestic === false;
+    // International cross-border stops get a distinct purple ring + dashed border
+    const ringColor = isIntl ? "#A78BFA" : (COUNTRY_COLOR[s.country] || "#888888");
+    const fillColor = COUNTRY_COLOR[s.country] || "#888888";
     return L.circleMarker([s.lat, s.lon], {
-      radius,
-      color: baseHex,
-      fillColor: baseHex,
-      fillOpacity: 0.4 + 0.5 * t,
-      opacity: 0.95,
-      weight: 1.5,
+      radius:      isIntl ? Math.max(3, radius * 0.85) : radius,
+      color:       ringColor,
+      fillColor,
+      fillOpacity: 0.35 + 0.55 * t,
+      opacity:     isIntl ? 0.85 : 1,
+      weight:      isIntl ? 2.5 : 1.5,
+      dashArray:   isIntl ? "4 3" : null,
     }).bindTooltip(
-      `<b>${s.id}</b><br/>${flagFor(s.country)} ${s.country} · degree <code>${s.degree}</code> · avg delay <code>${s.delay} min</code>`,
+      `<b>${s.id}</b><br/>${flagFor(s.country)} ${s.country}${isIntl ? " · 🌐 cross-border" : ""}<br/>degree <code>${s.degree}</code> · avg delay <code>${s.delay} min</code>`,
       { direction: "top", offset: [0, -6] }
     ).bindPopup(
-      `<div style="font-family:sans-serif"><b>${s.id}</b><br/>
-        Country: ${flagFor(s.country)} ${s.country}<br/>
+      `<div style="font-family:sans-serif;line-height:1.5"><b>${s.id}</b>
+        ${isIntl ? '<br/><span style="background:#a78bfa22;color:#7c3aed;padding:1px 6px;border-radius:3px;font-size:11px">cross-border</span>' : ""}
+        <br/>Country: ${flagFor(s.country)} ${s.country}<br/>
         Coords: <code>${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}</code><br/>
         Degree: <code>${s.degree}</code><br/>
         Avg historical delay: <code>${s.delay} min</code></div>`
     );
   });
   STATE.mapCluster.addLayers(markers);
+
+  // Disclaimer banner: explain Finland (no source coords) and NL international
+  updateMapDisclaimer();
+}
+
+function updateMapDisclaimer() {
+  const el = document.getElementById("map-disclaimer");
+  if (!el) return;
+  const meta = STATE.stationsMeta || {};
+  const missing = meta.missing_coords_per_country || {};
+  const intl    = meta.international_per_country || {};
+  let msgs = [];
+  if (STATE.mapCountry === "FI" || (!STATE.mapCountry && (missing.FI || 0) > 0)) {
+    msgs.push(`<span class="em">🇫🇮 Finland:</span> ${missing.FI || 0} of ${(missing.FI || 0) + 0} stations have <strong>no coordinates in the FMI source</strong> (the FI-TW dataset ships station codes without lat/lon). They exist in the KG but cannot be plotted geographically.`);
+  }
+  if (!STATE.mapCountry && (intl.NL || 0) > 0) {
+    msgs.push(`<span class="em">🇳🇱 Netherlands:</span> ${intl.NL} stations lie outside the NL bounding box — these are <strong>genuine cross-border destinations</strong> served by NS (Brussels, Berlin, Vienna, Frankfurt, …). They're rendered with a dashed purple ring.`);
+  }
+  if (STATE.mapCountry === "NL" && (intl.NL || 0) > 0) {
+    msgs.push(`<span class="em">🇳🇱 Netherlands:</span> ${intl.NL} of these are international cross-border destinations served by NS (dashed purple rings). The other ${(meta.domestic_per_country?.NL || 0)} are domestic.`);
+  }
+  if (msgs.length) {
+    el.hidden = false;
+    el.innerHTML = msgs.join("<br>");
+  } else {
+    el.hidden = true;
+  }
 }
 
 function flagFor(c) { return c === "IT" ? "🇮🇹" : c === "FI" ? "🇫🇮" : c === "NL" ? "🇳🇱" : "🌍"; }
@@ -551,12 +583,16 @@ function layoutFor(name) {
   return { name: "cose", animate: true, idealEdgeLength: 90, padding: 30,
             nodeRepulsion: 6000, edgeElasticity: 100 };
 }
-document.getElementById("kg-layout-tabs").addEventListener("click", (e) => {
-  if (!e.target.dataset.layout) return;
-  document.querySelectorAll("#kg-layout-tabs button").forEach(b => b.classList.remove("active"));
-  e.target.classList.add("active");
-  drawKgSample(e.target.dataset.layout);
-});
+// KG inline graphs were moved to kg.html; only wire if the tabs are present.
+const kgLayoutTabs = document.getElementById("kg-layout-tabs");
+if (kgLayoutTabs) {
+  kgLayoutTabs.addEventListener("click", (e) => {
+    if (!e.target.dataset.layout) return;
+    document.querySelectorAll("#kg-layout-tabs button").forEach(b => b.classList.remove("active"));
+    e.target.classList.add("active");
+    drawKgSample(e.target.dataset.layout);
+  });
+}
 
 // ── Prediction panel ───────────────────────────────────────────────────
 function wirePredict() {

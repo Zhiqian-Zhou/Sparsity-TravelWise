@@ -119,18 +119,56 @@ n_kept = len(sta)
 n_no_coords = n_total - len(sta_all.dropna(subset=["lat", "lon"]))
 print(f"  total stations: {n_total}, with coords: {n_total - n_no_coords}, "
       f"after Europe filter: {n_kept}")
+# Geographic bounding boxes for "domestic" classification (rough but useful).
+COUNTRY_BBOX = {
+    "IT": {"lat": (35.0, 47.5), "lon": (6.0, 19.0)},
+    "FI": {"lat": (59.5, 70.5), "lon": (19.0, 32.0)},
+    "NL": {"lat": (50.5, 53.7), "lon": (3.0, 7.5)},
+}
+def _is_domestic(country, lat, lon):
+    bb = COUNTRY_BBOX.get(country)
+    if not bb:
+        return True
+    return bb["lat"][0] <= lat <= bb["lat"][1] and bb["lon"][0] <= lon <= bb["lon"][1]
+
 sta_out = []
+n_dom = {"IT": 0, "FI": 0, "NL": 0}
+n_intl = {"IT": 0, "FI": 0, "NL": 0}
 for _, row in sta.iterrows():
+    lat = round(float(row["lat"]), 4)
+    lon = round(float(row["lon"]), 4)
+    domestic = _is_domestic(row["country"], lat, lon)
+    bucket = n_dom if domestic else n_intl
+    bucket[row["country"]] += 1
     sta_out.append({
-        "id":      row["station_id"],
-        "country": row["country"],
-        "lat":     round(float(row["lat"]), 4),
-        "lon":     round(float(row["lon"]), 4),
-        "degree":  int(row["degree"]) if pd.notna(row["degree"]) else 0,
-        "delay":   round(float(row["avg_historical_delay"]), 2)
-                    if pd.notna(row["avg_historical_delay"]) else 0.0,
+        "id":         row["station_id"],
+        "country":    row["country"],
+        "lat":        lat,
+        "lon":        lon,
+        "degree":     int(row["degree"]) if pd.notna(row["degree"]) else 0,
+        "delay":      round(float(row["avg_historical_delay"]), 2)
+                       if pd.notna(row["avg_historical_delay"]) else 0.0,
+        "domestic":   domestic,
     })
+print(f"  domestic per country: {n_dom}")
+print(f"  international cross-border per country: {n_intl}")
 (OUT / "stations.json").write_text(json.dumps(sta_out))
+
+# Counts of stations missing coords entirely (so the UI can surface this honestly)
+n_missing = {}
+for c in ("IT", "FI", "NL"):
+    cc_full = "Italy" if c == "IT" else ("Finland" if c == "FI" else "Netherlands")
+    p = ROOT / "Data" / cc_full / "processed" / "nodes_station.csv"
+    if p.exists():
+        df_c = pd.read_csv(p)
+        n_missing[c] = int(df_c[["lat", "lon"]].isna().any(axis=1).sum())
+print(f"  stations missing lat/lon entirely: {n_missing}")
+(OUT / "stations_meta.json").write_text(json.dumps({
+    "total_with_coords": len(sta_out),
+    "domestic_per_country": n_dom,
+    "international_per_country": n_intl,
+    "missing_coords_per_country": n_missing,
+}, indent=2))
 
 
 # ── 4b. KG sample: a representative subgraph for in-browser visualisation ────
