@@ -21,6 +21,15 @@
 \usepackage[T1]{fontenc}
 \usepackage[margin=1in]{geometry}
 
+% Allow long teletype identifiers (e.g. \texttt{cause\_group},
+% \texttt{prev\_stop\_actual\_delay}) to break across lines. Without this,
+% TeX refuses to break inside an underscore-bearing token and emits an
+% Overfull \hbox warning, e.g. on the first paragraph of \S9. The
+% emergencystretch knob also helps when paragraph-end boxes don't fit.
+\setlength{\emergencystretch}{2em}
+\hyphenpenalty=1000
+\tolerance=2000
+
 % ── Maths ────────────────────────────────────────────────────────────────────
 \usepackage{amsmath, amssymb, amsfonts, mathtools}
 
@@ -75,6 +84,22 @@
   showstringspaces=false, columns=fullflexible,
   upquote=true, escapeinside={(*}{*)},
   tabsize=2,
+  % `listings` is 8-bit-only by default and chokes on stray UTF-8 (em dashes,
+  % en dashes, non-breaking spaces, smart quotes) -- which silently sneak in
+  % when authors paste from notebooks or word processors. Map the offenders
+  % to ASCII-safe equivalents so a single rogue character can't break the
+  % whole build on Overleaf TeXLive 2025.
+  literate=%
+    {—}{{--}}1
+    {–}{{-}}1
+    {“}{{"}}1
+    {”}{{"}}1
+    {‘}{{'}}1
+    {’}{{'}}1
+    { }{{ }}1
+    {…}{{...}}1
+    {≥}{{>=}}1
+    {≤}{{<=}}1,
 }
 
 % ── Bibliography (natbib + bibtex — ~3× faster than biblatex/biber) ──────────
