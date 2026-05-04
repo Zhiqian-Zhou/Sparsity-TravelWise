@@ -1,0 +1,294 @@
+{
+  "classes": [
+    "accidents",
+    "engineering work",
+    "external",
+    "infrastructure",
+    "logistical",
+    "rolling stock",
+    "staff",
+    "unknown",
+    "weather"
+  ],
+  "v1": {
+    "models": {
+      "logreg": {
+        "val_macro_f1": 0.11624074080743974,
+        "test_macro_f1": 0.13979464463251431,
+        "val_acc": 0.1469202817280517,
+        "test_acc": 0.1900768342288957,
+        "test_per_class_f1": {
+          "accidents": 0.001841620626151013,
+          "engineering work": 0.0,
+          "external": 0.1715623669646658,
+          "infrastructure": 0.3068121809540574,
+          "logistical": 0.10201660735468565,
+          "rolling stock": 0.22270114942528735,
+          "staff": 0.40595533498759306,
+          "unknown": 0.028011204481792718,
+          "weather": 0.019251336898395723
+        }
+      },
+      "lgbm": {
+        "val_macro_f1": 0.0925178209591398,
+        "test_macro_f1": 0.08879565639190747,
+        "val_acc": 0.3737382800233278,
+        "test_acc": 0.356902525988048,
+        "test_per_class_f1": {
+          "accidents": 0.08,
+          "engineering work": 0.0,
+          "external": 0.0,
+          "infrastructure": 0.08866178704598812,
+          "logistical": 0.0,
+          "rolling stock": 0.528390352445663,
+          "staff": 0.10210876803551609,
+          "unknown": 0.0,
+          "weather": 0.0
+        }
+      },
+      "xgb": {
+        "val_macro_f1": 0.08949130021807178,
+        "test_macro_f1": 0.11007258967404199,
+        "val_acc": 0.3824862051949217,
+        "test_acc": 0.3763370662381359,
+        "test_per_class_f1": {
+          "accidents": 0.24282115869017631,
+          "engineering work": 0.0,
+          "external": 0.0,
+          "infrastructure": 0.07309248151764541,
+          "logistical": 0.0,
+          "rolling stock": 0.5422893357327283,
+          "staff": 0.13245033112582782,
+          "unknown": 0.0,
+          "weather": 0.0
+        }
+      },
+      "rf": {
+        "val_macro_f1": 0.1869450527889243,
+        "test_macro_f1": 0.1459467492177583,
+        "val_acc": 0.3667399398860527,
+        "test_acc": 0.3317933008587355,
+        "test_per_class_f1": {
+          "accidents": 0.04447228311932352,
+          "engineering work": 0.0,
+          "external": 0.07041024148967122,
+          "infrastructure": 0.2026685070163331,
+          "logistical": 0.027428571428571427,
+          "rolling stock": 0.5098920424014459,
+          "staff": 0.42129277566539924,
+          "unknown": 0.03735632183908046,
+          "weather": 0.0
+        }
+      },
+      "mlp": {
+        "val_macro_f1": 0.1309651710104662,
+        "test_macro_f1": 0.10562266371429965,
+        "val_acc": 0.19653671885514334,
+        "test_acc": 0.13558981569828754,
+        "test_per_class_f1": {
+          "accidents": 0.053282987203692046,
+          "engineering work": 0.0008674907829104315,
+          "external": 0.09511484956324814,
+          "infrastructure": 0.293265465935787,
+          "logistical": 0.08314467997530356,
+          "rolling stock": 0.11892391178847708,
+          "staff": 0.22532188841201717,
+          "unknown": 0.08068269976726145,
+          "weather": 0.0
+        }
+      }
+    },
+    "transfer": {
+      "IT": {
+        "n": 340319,
+        "distribution": {
+          "accidents": 0.0,
+          "engineering work": 0.0,
+          "external": 0.0006229449428330478,
+          "infrastructure": 0.027721049956070627,
+          "logistical": 0.009661523452995572,
+          "rolling stock": 0.24198766451476408,
+          "staff": 0.7012097473253036,
+          "unknown": 0.0,
+          "weather": 0.01879706980803305
+        },
+        "mean_confidence_per_class": {
+          "accidents": 0.0,
+          "engineering work": 0.0,
+          "external": 0.166,
+          "infrastructure": 0.188,
+          "logistical": 0.229,
+          "rolling stock": 0.224,
+          "staff": 0.317,
+          "unknown": 0.0,
+          "weather": 0.176
+        },
+        "overall_mean_confidence": 0.2870734362838049
+      },
+      "FI": {
+        "n": 865560,
+        "distribution": {
+          "accidents": 5.892139193123527e-05,
+          "engineering work": 0.0,
+          "external": 0.000529137205970701,
+          "infrastructure": 0.014949859050787929,
+          "logistical": 0.3036046028004991,
+          "rolling stock": 0.659070428393179,
+          "staff": 0.018653819492582838,
+          "unknown": 0.0,
+          "weather": 0.003133231665049217
+        },
+        "mean_confidence_per_class": {
+          "accidents": 0.182,
+          "engineering work": 0.0,
+          "external": 0.197,
+          "infrastructure": 0.209,
+          "logistical": 0.259,
+          "rolling stock": 0.263,
+          "staff": 0.221,
+          "unknown": 0.0,
+          "weather": 0.216
+        },
+        "overall_mean_confidence": 0.25983648287407207
+      }
+    }
+  },
+  "v2": {
+    "models": {
+      "logreg_v2": {
+        "val_macro_f1": 0.1157266567520442,
+        "test_macro_f1": 0.13977910558796952,
+        "val_acc": 0.1471445875016823,
+        "test_acc": 0.1904785818309647,
+        "test_per_class_f1": {
+          "accidents": 0.0018281535648994515,
+          "engineering work": 0.0,
+          "external": 0.17129330751022165,
+          "infrastructure": 0.3075168844838172,
+          "logistical": 0.10153482880755609,
+          "rolling stock": 0.22272447092664885,
+          "staff": 0.40471512770137524,
+          "unknown": 0.029085872576177285,
+          "weather": 0.019313304721030045
+        }
+      },
+      "lgbm_v2": {
+        "val_macro_f1": 0.17127796671404055,
+        "test_macro_f1": 0.21306291702722305,
+        "val_acc": 0.29339195190884215,
+        "test_acc": 0.2753979812182996,
+        "test_per_class_f1": {
+          "accidents": 0.06650476368391556,
+          "engineering work": 0.0,
+          "external": 0.1648793565683646,
+          "infrastructure": 0.25288596396590785,
+          "logistical": 0.04940530649588289,
+          "rolling stock": 0.4248308694562766,
+          "staff": 0.37738731856378915,
+          "unknown": 0.07279693486590039,
+          "weather": 0.5088757396449705
+        }
+      },
+      "xgb_v2": {
+        "val_macro_f1": 0.181329607689181,
+        "test_macro_f1": 0.15221222678492793,
+        "val_acc": 0.3091382172177112,
+        "test_acc": 0.2830311856576106,
+        "test_per_class_f1": {
+          "accidents": 0.07002457002457002,
+          "engineering work": 0.0,
+          "external": 0.20740169622205087,
+          "infrastructure": 0.21253858940869153,
+          "logistical": 0.012565445026178011,
+          "rolling stock": 0.45947122861586315,
+          "staff": 0.32599724896836313,
+          "unknown": 0.08191126279863481,
+          "weather": 0.0
+        }
+      },
+      "rf_v2": {
+        "val_macro_f1": 0.16406898310563647,
+        "test_macro_f1": 0.1430357983825726,
+        "val_acc": 0.36386882598358083,
+        "test_acc": 0.3706623813589113,
+        "test_per_class_f1": {
+          "accidents": 0.03493821900298253,
+          "engineering work": 0.0,
+          "external": 0.09295872355185571,
+          "infrastructure": 0.2537137971572085,
+          "logistical": 0.0,
+          "rolling stock": 0.5301414381837323,
+          "staff": 0.3422982885085575,
+          "unknown": 0.033271719038817,
+          "weather": 0.0
+        }
+      },
+      "gbm_v2": {
+        "val_macro_f1": 0.17502414674559041,
+        "test_macro_f1": 0.1554874020351429,
+        "val_acc": 0.27679332466017675,
+        "test_acc": 0.2764023502234721,
+        "test_per_class_f1": {
+          "accidents": 0.04548862784303924,
+          "engineering work": 0.0,
+          "external": 0.2064390243902439,
+          "infrastructure": 0.22234599532137686,
+          "logistical": 0.04995004995004995,
+          "rolling stock": 0.4216738197424893,
+          "staff": 0.389572773352643,
+          "unknown": 0.06391632771644393,
+          "weather": 0.0
+        }
+      },
+      "stack_v2": {
+        "val_macro_f1": 0.2784762392909711,
+        "test_macro_f1": 0.13727870631355263,
+        "val_acc": 0.444035709479162,
+        "test_acc": 0.3543413850248581,
+        "test_per_class_f1": {
+          "accidents": 0.0030816640986132513,
+          "engineering work": 0.0,
+          "external": 0.025491825990579108,
+          "infrastructure": 0.2303376517392635,
+          "logistical": 0.030245746691871456,
+          "rolling stock": 0.5172877894834548,
+          "staff": 0.38928067700987307,
+          "unknown": 0.039783001808318265,
+          "weather": 0.0
+        }
+      }
+    },
+    "transfer": {
+      "IT": {
+        "n": 340319,
+        "distribution": {
+          "accidents": 0.002074524196415716,
+          "engineering work": 0.5482033033712488,
+          "external": 0.0,
+          "infrastructure": 0.0004995313220831044,
+          "logistical": 0.0022302604321239776,
+          "rolling stock": 0.34260796488000966,
+          "staff": 0.10200723438891159,
+          "unknown": 0.002377181409207244,
+          "weather": 0.0
+        },
+        "overall_mean_confidence": 0.5998340412933184
+      },
+      "FI": {
+        "n": 865560,
+        "distribution": {
+          "accidents": 4.390221359582236e-05,
+          "engineering work": 0.184975045057535,
+          "external": 0.30049563288506864,
+          "infrastructure": 0.3017907481861454,
+          "logistical": 0.00024261749618743935,
+          "rolling stock": 0.02733143860622025,
+          "staff": 0.04793890660381718,
+          "unknown": 0.13650700124774712,
+          "weather": 0.0006747077036831647
+        },
+        "overall_mean_confidence": 0.3691087568604949
+      }
+    }
+  }
+}

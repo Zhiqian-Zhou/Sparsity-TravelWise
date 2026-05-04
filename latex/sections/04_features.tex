@@ -1,0 +1,76 @@
+\section{Feature engineering and anti-leakage}
+\label{sec:features}
+
+\subsection{The Common Data Model}
+
+After Phase~1, every country's processed/ folder contains the same five CSV files: \texttt{nodes\_station}, \texttt{nodes\_service}, \texttt{edges\_stops\_at}, \texttt{edges\_adjacent} and \texttt{nodes\_fault}. Phase~2 (\texttt{stop\_level/preprocess\_stops.py}) loads these 15 CSVs (5 schemas $\times$ 3 countries), joins them at stop grain, computes 16 feature groups, fits a \texttt{StandardScaler} on training rows only, and persists a parquet feature store to \texttt{Data/stops/}.
+
+\subsection{Per-stop features}
+
+The 37 features available in scenario~A (pre-departure) and the 40 features available in scenario~B (inflight, +3 whitelisted) are organised in groups:
+
+\begin{table}[htbp]
+    \centering
+    \caption{Per-stop feature groups. Scenario A is pre-departure; scenario B adds the three inflight whitelisted features that depend on the actual delays of \emph{prior} stops on the same run.}
+    \label{tab:feature-groups}
+    \small
+    \begin{tabularx}{\textwidth}{lXc}
+        \toprule
+        Group & Features & Count \\
+        \midrule
+        Stop position & \texttt{stop\_order, position\_norm, is\_origin, is\_terminus, n\_total\_stops, cum\_distance\_km, cum\_scheduled\_minutes} & 7 \\
+        Stop time & \texttt{scheduled\_arrival\_hour, scheduled\_arrival\_dow, is\_holiday, month, month\_sin, month\_cos} & 6 \\
+        Station static & \texttt{lat, lon, degree, betweenness\_centrality, avg\_historical\_delay} & 5 \\
+        Service identity & \texttt{train\_class\_code, service\_n\_stops, service\_route\_distance\_km, service\_scheduled\_duration\_min} & 4 \\
+        Weather & \texttt{weather\_severity, temperature, wind\_speed, precipitation, snow\_depth} & 5 \\
+        Weather differential & \texttt{delta\_severity\_vs\_prev\_stop, delta\_wind\_vs\_prev\_stop} & 2 \\
+        Lagged station / train / cross / neighbour & \texttt{station\_lag1\_rate, station\_lag7\_rate, station\_lag1\_avg\_delay, train\_lag1\_rate, train\_lag7\_rate, train\_station\_lag7\_rate, nbr\_lag1\_rate} & 7 \\
+        Fault context & \texttt{station\_n\_active\_faults\_14d} & 1 \\
+        \midrule
+        \textbf{Inflight (B only)} & \texttt{prev\_stop\_actual\_delay, cum\_actual\_delay\_so\_far, max\_actual\_delay\_so\_far} & 3 \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\subsection{Anti-leakage protocol}
+
+The pipeline turns on one rule: at prediction time, the feature vector $\mathbf{x}$ may only contain information that was actually available before the prediction is made. Several layers enforce it:
+
+\begin{enumerate}
+    \item Phase~1 keeps \texttt{delay\_minutes} only as a column to derive labels from; it is never persisted as a feature in the parquet output.
+    \item Phase~2 defines two sets \texttt{LEAKY\_COLS\_A} (15 columns) and \texttt{LEAKY\_COLS\_B} (11 columns; A minus the 3 inflight whitelist plus \texttt{headway\_to\_train\_ahead}) and asserts the active feature list does not intersect them \emph{before} fitting the scaler.
+    \item All lag features use \emph{strict} \texttt{<} on the daily aggregation grid: \texttt{station\_lag1\_rate(D)} sees only data from $D-1$ and earlier, never $D$. This invariant is unit-tested.
+    \item The temporal split is day-level so a \texttt{service\_id} never crosses the train/val/test boundary.
+    \item The \texttt{StandardScaler} is fit on \texttt{X\_train} only; \texttt{X\_val} and \texttt{X\_test} are transformed but never re-fit.
+    \item Per-scenario feature lists are persisted as \texttt{feature\_names\_\{A,B\}.json} so any downstream consumer (model, SHAP, ablation) reads the same contract.
+\end{enumerate}
+
+\subsection{Splits}
+
+The temporal split (\cref{tab:splits}) keeps services intact: \texttt{splits.assert\_no\_service\_overlap} guarantees a service ID never appears in two different splits.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Temporal split sizes after Phase~2. \emph{Disrupted rate} is the fraction of stops with $\texttt{arrival\_delay} > 5$\,min or cancelled.}
+    \label{tab:splits}
+    \small
+    \begin{tabular}{lrrl}
+        \toprule
+        Split & Rows & Disrupted rate & Date window \\
+        \midrule
+        Train & \num{11915114} & \SI{10.34}{\percent} & 2024-01-01 -- 2024-04-30 \\
+        Val   & \num{2368484}  & \SI{7.85}{\percent}  & 2024-05-01 -- 2024-05-31 \\
+        Test  & \num{2303236}  & \SI{7.88}{\percent}  & 2024-06-01 -- 2024-06-30 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Memory engineering}
+
+The 16.6\,M-row $\times$~47-column dataframe initially exceeded \SI{15}{GB} RAM. Three concrete fixes shipped during this run:
+\begin{enumerate}
+    \item Compact dtypes on load: float64\,$\to$\,float32 ($\sim$50\,\% saving), small ints down-casted to \texttt{int8/32}, string IDs to \texttt{category}.
+    \item Map-based stop-grain join (\texttt{Series.map(dict)} instead of \texttt{pd.merge}) avoids the multi-GB intermediate hash that pandas materialises for two~\num{1}~M+-key categoricals.
+    \item Eight redundant \texttt{df = df.copy()} calls in feature builders removed; the chained-flow pattern \texttt{df = F.add\_*(df)} is safe to mutate in place.
+\end{enumerate}
+A high-cardinality fallback in \texttt{compute\_train\_lag} skips the contiguous-calendar grid when the unique-key count exceeds 50K (NL has $\sim$1\,M unique train keys, so the default grid would be 215\,M rows).

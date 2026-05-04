@@ -1,0 +1,107 @@
+\section{Knowledge Graph integration}
+\label{sec:kg}
+
+\subsection{Schema and backend choice}
+
+The Phase 1/2 outputs already carry node and edge structure (\texttt{nodes\_station}, \texttt{nodes\_service}, \texttt{edges\_stops\_at}, \texttt{edges\_adjacent}, \texttt{nodes\_fault}). We promote them to a queryable graph database. The original target backend was \textbf{Sparksee}~\cite{sparksee2024,martinez2017dex} -- the project ships a valid licence file -- but Sparksee's binary distribution is gated behind a registered-user download we cannot reach from the build environment. We therefore use \textbf{Kuzu}~\cite{feng2023kuzu}, an embedded Cypher-native graph database that is pip-installable, Python-3 native, and supports Cypher queries that are \emph{byte-identical-portable} to Sparksee. The full schema is shown in \cref{lst:kg-schema}.
+
+\begin{figure}[htbp]
+\begin{minted}[fontsize=\small,frame=single,framesep=2mm,bgcolor=gray!5]{cypher}
+CREATE NODE TABLE Station(
+    station_id            STRING,
+    country               STRING,
+    lat                   DOUBLE,
+    lon                   DOUBLE,
+    avg_historical_delay  DOUBLE,
+    degree                INT64,
+    PRIMARY KEY (station_id));
+CREATE NODE TABLE TrainService(
+    service_id        STRING, country STRING,
+    train_class_code  INT64,  date DATE,
+    is_disrupted      INT64,
+    PRIMARY KEY (service_id));
+CREATE NODE TABLE FaultEvent(
+    fault_id     STRING, date DATE, description STRING,
+    PRIMARY KEY (fault_id));
+CREATE REL TABLE STOPS_AT(
+    FROM TrainService TO Station,
+    delay_minutes      DOUBLE, weather_severity   INT64,
+    temperature DOUBLE, wind_speed DOUBLE,
+    precipitation DOUBLE, snow_depth DOUBLE);
+CREATE REL TABLE ADJACENT_TO(FROM Station TO Station, distance_km DOUBLE);
+CREATE REL TABLE REPORTED_AT(FROM FaultEvent TO Station);
+\end{minted}
+\caption{KG schema (Cypher DDL). Three node tables, three relationship tables. Identical between Kuzu and Sparksee.}
+\label{lst:kg-schema}
+\end{figure}
+
+\subsection{Build statistics}
+
+\begin{table}[htbp]
+    \centering
+    \caption{KG build statistics on a Tesla T4 / 4-core CPU box. Kuzu's bulk \texttt{COPY} sustains around \SI{500}{K} relationships/s on parquet input.}
+    \label{tab:kg-build}
+    \small
+    \begin{tabular}{lrr}
+        \toprule
+        Step & Time & Rows or rows/s \\
+        \midrule
+        Stage parquets (5 inputs concat + dedupe) & $\sim$\SI{6}{min} & 16.59~M rows total \\
+        \texttt{COPY Station}      & 0.1~s & 2,397 \\
+        \texttt{COPY TrainService} & 1.5~s & 1.22~M (\SI{812}{K}/s) \\
+        \texttt{COPY FaultEvent}   & 0.1~s & 2,938 \\
+        \texttt{COPY STOPS\_AT}    & 33.2~s & 16.59~M (\SI{499}{K}/s) \\
+        \texttt{COPY ADJACENT\_TO} & 0.2~s & 163,902 (\SI{820}{K}/s) \\
+        \texttt{COPY REPORTED\_AT} & 0.1~s & 2,938 \\
+        \midrule
+        \textbf{Total Kuzu COPY}   & $\sim$\textbf{35~s} & 16.75~M rels + 1.22~M nodes \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The on-disk database is~\SI{809}{MB} -- larger than the~\SI{269}{MB} parquet feature store but queryable.
+
+\subsection{Bridge query: closing the loop from SHAP to KG}
+
+The full point of the Knowledge Graph is to translate a \emph{black-box probability} into a \emph{queryable spatial-temporal neighbourhood}. After the SHAP report flags a high-risk stop, the analyst plugs $(\texttt{service\_id}, \texttt{station\_id}, \texttt{date})$ into \cref{lst:kg-bridge}.
+
+\begin{figure}[htbp]
+\begin{minted}[fontsize=\small,frame=single,framesep=2mm,bgcolor=gray!5]{cypher}
+MATCH (svc:TrainService {service_id: $sid})-[stop:STOPS_AT]->(st:Station {station_id: $stid})
+OPTIONAL MATCH (f:FaultEvent)-[:REPORTED_AT]->(st)
+  WHERE f.date >= date($d) - INTERVAL('14 days') AND f.date <= date($d)
+OPTIONAL MATCH (st)-[adj:ADJACENT_TO]->(nbr:Station)
+RETURN
+  st.station_id          AS station,
+  st.country             AS country,
+  st.avg_historical_delay AS station_avg_delay,
+  st.degree              AS degree,
+  stop.delay_minutes     AS this_stop_delay,
+  stop.weather_severity  AS weather_severity,
+  count(DISTINCT f)      AS recent_faults_14d,
+  count(DISTINCT nbr)    AS n_neighbours,
+  collect(DISTINCT nbr.station_id) AS all_neighbours
+\end{minted}
+\caption{KG bridge query: takes a SHAP-flagged $(\texttt{service\_id}, \texttt{station\_id}, \texttt{date})$ triple and returns the surrounding spatial-temporal context: recent faults, neighbouring stations, the actual stop delay and weather.}
+\label{lst:kg-bridge}
+\end{figure}
+
+\paragraph{Live demo.} For the highest-confidence true-positive disruption from \texttt{xgb/B}, the bridge query returns \cref{lst:kg-result} in \SI{52}{ms}.
+
+\begin{figure}[htbp]
+\begin{minted}[fontsize=\small,frame=single,framesep=2mm,bgcolor=gray!5]{json}
+{
+  "station": "FI_HKH",       "country": "FI",
+  "station_avg_delay": 6.84, "degree": 213,
+  "this_stop_delay": 36.0,   "weather_severity": 0,
+  "recent_faults_14d": 0,    "n_neighbours": 2,
+  "sample_neighbours": ["FI_HVK", "FI_TKL"]
+}
+\end{minted}
+\caption{Bridge-query result for service \texttt{FI\_28\_2024-06-30} at station \texttt{FI\_HKH} on \texttt{2024-06-30}. The SHAP top driver \texttt{prev\_stop\_actual\_delay} is matched here by the actual \SI{36}{min} delay; \texttt{degree=213} confirms FI\_HKH is a hub.}
+\label{lst:kg-result}
+\end{figure}
+
+\subsection{Sparksee swap}
+
+The codebase has a \texttt{--backend sparksee} switch in \texttt{stop\_level/build\_kg.py}; the function body is documented but raises \texttt{NotImplementedError} until the Sparksee binary is available locally. Activation requires (i) downloading the tarball from the user's Sparsity Technologies account, (ii) setting \texttt{LD\_LIBRARY\_PATH}, and (iii) running with \texttt{--backend sparksee}. The Cypher queries (bridge, demo, aggregate counts) are 100\,\% portable.

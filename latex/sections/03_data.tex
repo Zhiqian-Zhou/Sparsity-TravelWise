@@ -1,0 +1,68 @@
+\section{Data sources}
+\label{sec:data}
+
+The pipeline ingests open data from three operators. \cref{tab:data-sources} summarises the row counts after Phase~1 preprocessing; the absolute total is \num{16586834} stop rows, \num{1217406} services, and \num{2397} stations.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Per-country data sources, scale and quirks. All windows are 2024-01-01 to 2024-06-30.}
+    \label{tab:data-sources}
+    \small
+    \begin{tabularx}{\textwidth}{lXrrr}
+        \toprule
+        Country & Source & Stops & Services & Stations \\
+        \midrule
+        Italy        & Trenitalia operations CSV~\cite{trenitalia2025figshare} & \num{2678291} & \num{344924} & \num{1399} \\
+        Finland      & FI-TW Kaggle~\cite{borin2025fitw} (FMI weather)       & \num{3112754} & \num{35687}  & \num{451} \\
+        Netherlands  & RDT~\cite{rdt2024opendata} + Open-Meteo~\cite{zippenfenig2023openmeteo} & \num{10795789} & \num{1178395} & \num{549} \\
+        \midrule
+        Total        & --                                                     & \num{16586834} & \num{1559006} & \num{2397} \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\subsection{Italy}
+
+The Italian source ships as four CSVs (operations, station locations, adjacency mileage, fault information). The operations file is~\SI{412}{MB} and is read in chunks to keep peak RAM bounded. Two non-numeric tokens require special handling: \texttt{'N'} marks the first stop of a service (no upstream delay defined) and \texttt{'S'} marks a cancellation. Both are replaced with \texttt{NaN}, with the \texttt{'S'} mask retained as a separate cancellation flag. \cref{fig:italy-step1-2} shows the chunked load and the sentinel breakdown.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{italy/step_01_streaming_load.png}
+        \caption{Per-chunk row counts during the streaming load.}
+    \end{subfigure}\hfill
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{italy/step_02_sentinel_breakdown.png}
+        \caption{Breakdown of the \texttt{'N'}/\texttt{'S'} sentinels in \texttt{delay\_minutes}.}
+    \end{subfigure}
+    \caption{Italy preprocessing: streaming load (a) and sentinel breakdown (b). The 12--13\,\% \texttt{'N'} share corresponds to one origin per service.}
+    \label{fig:italy-step1-2}
+\end{figure}
+
+\subsection{Finland}
+
+The Finnish source -- the FI-TW Kaggle dataset~\cite{borin2025fitw} -- is the most syntactically painful: each row is one train, with all stops nested as a Python repr string in a \texttt{timeTableRows} cell, including bare \texttt{nan} tokens that \texttt{ast.literal\_eval} cannot parse without preprocessing. After explosion the data is one row per stop, with a \texttt{weather\_observations} dictionary embedded per stop -- coming from FMI -- whose keys are human-readable English strings (\texttt{'Snow depth'}, \texttt{'Air temperature'}). An earlier version of the codebase mapped only the camelCase API forms (\texttt{snowDepth}, \texttt{airTemperature}); we extended the alias map to cover both. \cref{fig:finland-snow-severity} shows the resulting snow-depth distribution by month and the disruption rate by weather severity.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{finland/step_07_snow_distribution.png}
+        \caption{Snow depth by month (FI). Median $\sim$\,\SI{25}{cm} in Jan--Mar, $\sim$\,0 in Apr--Jun.}
+    \end{subfigure}\hfill
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{finland/step_08_severity.png}
+        \caption{$P(\text{disrupted}\mid\text{severity})$ on FI. Severity~4 (extreme) doubles the disruption probability.}
+    \end{subfigure}
+    \caption{Finland weather signal. Severity is a 0--4 ordinal computed from snow depth, precipitation and visibility.}
+    \label{fig:finland-snow-severity}
+\end{figure}
+
+\subsection{Netherlands}
+
+The Dutch source is the largest by volume (\num{10795789} stop rows). The raw RDT export uses colon-prefixed columns (\texttt{Service:Date}, \texttt{Stop:Arrival cancelled}) and a \emph{three-way} cancellation flag: a stop can be cancelled at arrival, at departure, or both, in addition to the service-level \texttt{fully\_cancelled} flag. We union all three plus the implicit \texttt{'N'/'S'} sentinels using \texttt{any(axis=1)}.
+
+The RDT data ships \emph{without} weather, so we built a small Open-Meteo Historical Archive client (\texttt{preprocess/weather\_enrichment\_nl.py}, $\sim$160 lines) that fetches daily aggregates per station with \texttt{requests-cache}-backed caching: the first run hits the network for 591 stations (213 returned usable data); subsequent runs read the cached parquet. The enriched per-stop weather is then mapped onto the same 0--4 severity ordinal used by IT and FI.

@@ -1,0 +1,38 @@
+\documentclass[11pt, a4paper]{article}
+\input{preamble}
+
+\title{\bfseries Stop-Level Disruption Prediction Across Italian, Finnish, and Dutch Railways:\\
+        \large A Multi-Country Pipeline with Explainability and Knowledge-Graph Integration}
+
+\author{Anonymous Authors\\\small\href{https://github.com/.../Sparsity-TravelWise}{\texttt{github.com/Sparsity-TravelWise}}}
+\date{May 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We present a unified pipeline for predicting railway-disruption probability \emph{at every individual stop} of a scheduled service across the heterogeneous networks of Italy, Finland and the Netherlands. The pipeline ingests~16.6~million stop rows from three different open data sources, harmonises them under a single anti-leakage Common Data Model with~37 (pre-departure) or~40 (inflight) features, trains four model families on identical splits, and ties the SHAP feature attributions back to a queryable Knowledge Graph. On the held-out June~2024 test set the strongest pre-departure model (XGBoost) reaches a PR-AUC of~\num{0.552}; the inflight variant -- which sees prior-stop actual delays -- reaches \num{0.952}. We additionally treat the Netherlands as the only country with cause-of-disruption labels, train five classifiers on its~127K labelled stops, and evaluate cross-country transfer. We report a~46\% relative improvement in test macro-F1 (\num{0.146}\,$\to$\,\num{0.213}) by introducing cause-specific feature engineering and a sample-weight strategy applied symmetrically to gradient-boosted models. We also document where the transfer fails: the model never predicts the rare \emph{weather} class on Finland despite reaching F1~=~\num{0.509} on that class within the Netherlands, a domain-shift artefact we attribute to incompatible weather-feature scales between Open-Meteo daily aggregates and FMI per-stop hourly observations. The full pipeline -- 32 unit tests, an~\SI{809}{MB} Kuzu Knowledge Graph, and 51~inspection figures -- is reproducible from raw open data with three shell commands.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\input{sections/01_introduction.tex}
+\input{sections/02_related_work.tex}
+\input{sections/03_data.tex}
+\input{sections/04_features.tex}
+\input{sections/05_models.tex}
+\input{sections/06_evaluation.tex}
+\input{sections/07_xai.tex}
+\input{sections/08_kg.tex}
+\input{sections/09_cause.tex}
+\input{sections/10_transfer.tex}
+\input{sections/11_discussion.tex}
+\input{sections/12_conclusion.tex}
+
+\printbibliography
+
+\appendix
+\input{sections/A_appendix.tex}
+
+\end{document}

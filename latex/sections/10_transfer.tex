@@ -1,0 +1,71 @@
+\section{Cross-country transfer and failure modes}
+\label{sec:transfer}
+
+\subsection{Setup}
+
+The cause model is trained on \emph{Netherlands} data only because Italy and Finland do not publish cause labels. We attempt to transfer the trained model to Italy (340,319 disrupted stops) and Finland (865,560 disrupted stops) and audit the resulting predicted distributions for plausibility against published domain knowledge.
+
+\subsection{v1 vs v2 transfer comparison}
+
+\begin{table}[htbp]
+    \centering
+    \caption{Predicted cause distributions on disrupted stops in Italy and Finland under v1 (RF) vs v2 (stacking ensemble). v2 is also more confident on average.}
+    \label{tab:transfer}
+    \small
+    \begin{tabular}{lrrrr}
+        \toprule
+        & \multicolumn{2}{c}{Italy ($n$=340K)} & \multicolumn{2}{c}{Finland ($n$=866K)} \\
+        \cmidrule(lr){2-3}\cmidrule(lr){4-5}
+        Class & v1 & v2 & v1 & v2 \\
+        \midrule
+        rolling stock     & 0.242 & 0.343 & 0.659 & 0.027 \\
+        infrastructure    & 0.028 & 0.000 & 0.015 & 0.302 \\
+        external          & 0.001 & 0.000 & 0.001 & 0.300 \\
+        accidents         & 0.000 & 0.002 & 0.000 & 0.000 \\
+        unknown           & 0.000 & 0.002 & 0.000 & 0.137 \\
+        logistical        & 0.010 & 0.002 & 0.304 & 0.000 \\
+        engineering work  & 0.000 & 0.548 & 0.000 & 0.185 \\
+        staff             & 0.701 & 0.102 & 0.019 & 0.048 \\
+        weather           & 0.019 & 0.000 & 0.003 & 0.001 \\
+        \midrule
+        Mean confidence   & 0.287 & 0.600 & 0.260 & 0.369 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Italy: catastrophic mode collapse → improved-but-still-pathological}
+
+In v1 the model predicts \emph{staff}~70.1\,\% on Italy; the NL training prior for staff is only~2.5\,\%. The transfer is collapsed onto a rare-in-training class. The two principal causes are:
+
+\begin{enumerate}
+    \item \textbf{Italy's \texttt{temperature} feature is all zero}: the Phase-1 \texttt{lib\_italy.py} zero-fills missing weather columns instead of preserving \texttt{NaN}. The cause model trained on real NL temperatures interprets Italy's all-zero column as ``extreme winter conditions'', which in the NL feature space maps to anomalous patterns the RF associated with \emph{staff} during training.
+    \item \textbf{\texttt{class\_weight='balanced'} pathology under domain shift:} on out-of-distribution data, the rare-class up-weighted RF tree paths become the default fallback when the model is uncertain. Staff was the rare class with the strongest mid-tier signal in NL training, so it dominates the IT transfer.
+\end{enumerate}
+
+In v2 the staff share collapses to~10.2\,\%, but the mode-collapse moves to \emph{engineering work} at~54.8\,\% -- engineering work was F1=\num{0.000} on the NL test set, so the v2 prediction is also a transfer artefact rather than real signal. \textbf{IT trust score: 1/10 (v1) $\to$ 3/10 (v2).}
+
+\subsection{Finland: ``logistical pathology'' → domain-plausible distribution}
+
+In v1 Finland is dominated by \emph{rolling stock}~65.9\,\% and \emph{logistical}~30.4\,\%. \emph{Logistical} is the rarest NL training class (3.5\,\%); same class-balance pathology as Italy.
+
+In v2 the distribution flattens substantially: \emph{infrastructure}~30.2\,\% + \emph{external}~30.0\,\% + \emph{engineering work}~18.5\,\% + \emph{unknown}~13.7\,\%. This is a profile much closer to published Finnish railway research, which describes infrastructure failures (frozen points, signal icing) as a primary winter cause, with external interference (passers-by, animals on track) and operational scheduling issues following.
+
+\textbf{But weather remains under-predicted:} only~0.1\,\% of Finnish disruptions are predicted as weather, despite the fact that 27\,\% of Finnish stops have \texttt{weather\_severity}~$\geq3$ and the v2 model achieves F1=\num{0.509} on weather \emph{within the Netherlands}. Even at the most extreme severity bucket (severity~=~4 with median snow depth~$\geq25$\,cm, $\sim$277K stops in our window), only~0.7\,\% are predicted as weather.
+
+\textbf{Root cause: domain shift in feature scale.} The NL \texttt{precipitation} column comes from Open-Meteo daily aggregates (mm); the FI \texttt{precipitation} column comes from FMI per-stop hourly observations (mm/hour). They are on different scales. The threshold the model learned for ``precipitation $\Rightarrow$ weather cause'' on NL doesn't fire on FI because FI's precipitation values are systematically smaller numerically. \textbf{FI trust score: 2/10 (v1) $\to$ 4/10 (v2).}
+
+\subsection{Verification by independent agents}
+
+We launched two parallel review agents (\emph{Italy} and \emph{Finland}), each instructed to audit the transfer against domain knowledge and feature-distribution analysis. Both independently converged on the same root causes: feature-distribution covariate shift + class-balance pathology when \texttt{class\_weight='balanced'} is combined with out-of-distribution test data. The full agent reports are in \texttt{docs/CAUSE\_REVIEW.md} and \texttt{docs/CAUSE\_V2.md}.
+
+\subsection{Recommended next steps}
+
+The numbers above describe a partial success. To make the transfer operationally usable, the recommended path -- in order of expected lift -- is:
+
+\begin{enumerate}
+    \item Per-country temperature/precipitation re-scaling before transfer (CORAL or similar mean-variance alignment).
+    \item Fix the Italy zero-fill weather bug (\texttt{lib\_italy.py:204}) and re-run.
+    \item Hand-coded deterministic rules for the high-confidence cases: $\texttt{weather\_severity} \geq 3 \land \texttt{snow\_depth} \geq 15 \Rightarrow \text{weather}$.
+    \item Hierarchical model (predict \texttt{cause\_group} first, then sub-cause within group).
+    \item Eventually: collect a small per-country labelled set (5--10K rows), retrain locally.
+\end{enumerate}

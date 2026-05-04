@@ -1,0 +1,21 @@
+\section{Introduction}
+\label{sec:introduction}
+
+European railway operators routinely deal with several thousand passenger services per day per country. Predicting which of those services will be \emph{disrupted} -- arriving late by more than five minutes or being cancelled -- before the train departs and again at every stop along its route would let operators pre-stage staff, warn passengers, and reroute when necessary. The task is a textbook example of structured spatio-temporal prediction, but it is complicated in practice by three things:
+
+\begin{enumerate}
+    \item \textbf{Data heterogeneity.} Italy, Finland and the Netherlands publish operational data in three completely different shapes: a flat per-stop CSV with sentinel-coded delays, a serialised \texttt{timeTableRows} cell carrying nested Finnish Meteorological Institute (FMI) weather observations, and a wide-tariff RDT export with three-way cancellation flags and no embedded weather. The data sources are inconsistent on the schema level, the missingness conventions, the date format, and even the meaning of the disruption label.
+    \item \textbf{Class imbalance.} The fraction of stops labelled disrupted is around \SI{8}{\percent} on the held-out June test set, but skews to \SI{38}{\percent} in some countries depending on the weather window. Naive accuracy is a misleading headline metric.
+    \item \textbf{Causal heterogeneity.} The Netherlands publishes a separate disruption-incident log with cause labels (rolling stock, infrastructure, accidents, weather, etc.), but Italy and Finland do not. Cross-country transfer of cause models is therefore a domain-shift problem with no in-target validation signal.
+\end{enumerate}
+
+\paragraph{Contributions.} This work contributes:
+\begin{enumerate}
+    \item A unified anti-leakage feature store harmonising 16.6~M stop rows across IT/FI/NL into 37 (pre-departure) or 40 (inflight) features under a single Common Data Model (\cref{sec:data,sec:features}).
+    \item A four-model benchmark (Logistic Regression, LightGBM~\cite{ke2017lightgbm}, XGBoost~\cite{chen2016xgboost}, GraphSAGE~\cite{hamilton2017inductive}) trained twice -- pre-departure (A) and inflight (B) -- showing a clear inflight uplift driven by a single feature, \texttt{prev\_stop\_actual\_delay} (\cref{sec:models,sec:evaluation}).
+    \item A SHAP~\cite{lundberg2017unified,lundberg2020local} TreeSHAP analysis on the full 2.30~M-row test set, plus a lag-feature ablation that shows lag history is responsible for almost the entire test-set PR-AUC of the inflight scenario (\cref{sec:xai}).
+    \item An embedded Knowledge Graph -- built with Kuzu~\cite{feng2023kuzu}, designed to swap to Sparksee~\cite{sparksee2024,martinez2017dex} -- of \num{1.22}~M services, \num{2397} stations and \num{16.59}~M stop relationships that closes the loop between SHAP attributions and queryable spatial context (\cref{sec:kg}).
+    \item A five-model cause-of-disruption classifier on Dutch labelled data, with a v2 redesign that lifts test macro-F1 by 46\,\% (\cref{sec:cause}). We document where transfer to Italy and Finland fails (\cref{sec:transfer}).
+\end{enumerate}
+
+The whole pipeline -- 32~unit tests, the Knowledge Graph, the model-zoo benchmark and the SHAP report -- is reproducible from raw open data with three shell commands; data ingestion and feature engineering are in pandas + scikit-learn~\cite{pedregosa2011scikit}, the deep models in PyTorch~\cite{paszke2019pytorch} and PyTorch Geometric~\cite{fey2019fast}.

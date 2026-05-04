@@ -1,0 +1,134 @@
+\section{Appendix: Additional figures and tables}
+\label{sec:appendix}
+
+\subsection{Per-country preprocessing figures}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{italy/step_03_delay_distribution.png}
+        \caption{IT delay distribution.}
+    \end{subfigure}\hfill
+    \begin{subfigure}{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{italy/step_05_station_map.png}
+        \caption{IT station map.}
+    \end{subfigure}\hfill
+    \begin{subfigure}{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{italy/step_07_service_labelling.png}
+        \caption{IT service-level disruption rate.}
+    \end{subfigure}
+    \caption{Italy preprocessing diagnostics: delay shape, geography, and per-class disruption rate.}
+    \label{fig:appendix-italy}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{netherlands/step_07_station_map.png}
+        \caption{NL station map (with international stops).}
+    \end{subfigure}\hfill
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{netherlands/step_09_causes.png}
+        \caption{NL top-20 disruption causes.}
+    \end{subfigure}
+    \caption{Netherlands preprocessing diagnostics: geography and cause taxonomy.}
+    \label{fig:appendix-nl}
+\end{figure}
+
+\subsection{Additional XAI figures}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{stop_level/xai/local_waterfall_fp.png}
+        \caption{Confident false positive.}
+    \end{subfigure}\hfill
+    \begin{subfigure}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{stop_level/xai/local_waterfall_fn.png}
+        \caption{Worst false negative.}
+    \end{subfigure}
+    \caption{SHAP waterfalls: false-positive and false-negative cases.}
+    \label{fig:appendix-waterfalls}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{stop_level/xai/shap_by_country.png}
+        \caption{by country.}
+    \end{subfigure}\hfill
+    \begin{subfigure}{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{stop_level/xai/shap_by_position.png}
+        \caption{by stop position.}
+    \end{subfigure}\hfill
+    \begin{subfigure}{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{stop_level/xai/shap_by_train_class.png}
+        \caption{by train class.}
+    \end{subfigure}
+    \caption{Top-6 features per group breakdown for the scenario-B XGBoost model.}
+    \label{fig:appendix-shap-by}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{stop_level/xai/shap_dependence_top5.png}
+    \caption{SHAP dependence plots for the top 5 scenario-B features.}
+    \label{fig:appendix-dep}
+\end{figure}
+
+\subsection{Confusion matrix grid}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth]{stop_level/confusion_grid.png}
+    \caption{Confusion matrices for all 8 (model, scenario) combinations on the test set.}
+    \label{fig:appendix-confusion}
+\end{figure}
+
+\subsection{Reproducibility statement}
+
+The full pipeline is reproducible from a fresh checkout with three shell commands:
+
+\begin{verbatim}
+# Phase 0 — install dependencies (one-time)
+pip install pandas numpy scikit-learn lightgbm xgboost shap matplotlib seaborn \
+            pyarrow networkx jupyter papermill nbconvert torch torch_geometric \
+            openmeteo-requests requests-cache retry-requests kaggle pytest kuzu
+
+# Phase 0.5 — download raw data (one-time, ~5.7 GB)
+bash scripts/download_data.sh
+
+# Phase 1 — country preprocessing
+bash preprocess/run_all_notebooks.sh
+
+# Phase 2 — unified stop preprocessing
+python stop_level/preprocess_stops.py
+
+# Phase 3 — train + evaluate
+python stop_level/train_all.py --model logreg lgbm xgb graphsage --scenario both
+python stop_level/evaluate.py
+python stop_level/xai_stops.py --scenario both
+
+# Phase 5 — Knowledge Graph
+python stop_level/build_kg.py --rebuild
+
+# Phase 6 — Cause prediction
+python stop_level/cause_prediction.py        # v1
+python stop_level/cause_prediction_v2.py     # v2 (improved)
+\end{verbatim}
+
+The 32-test pytest suite runs in $\sim$25 seconds:
+
+\begin{verbatim}
+python -m pytest stop_level/tests/ -q
+\end{verbatim}

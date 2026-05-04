@@ -1,0 +1,10 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented a unified, anti-leakage pipeline for stop-level railway-disruption prediction across three European countries with very different open-data conventions. Four model families benchmarked twice (pre-departure and inflight) on identical splits show a clean inflight uplift driven principally by a single feature, \texttt{prev\_stop\_actual\_delay}: XGBoost reaches PR-AUC~\num{0.952} in the inflight scenario. The SHAP report, the lag-feature ablation, and the Knowledge Graph bridge query collectively translate the model's predictions into a queryable spatial-temporal neighbourhood that operations analysts can act on.
+
+For cause-of-disruption prediction we presented a v2 redesign that lifts test macro-F1 by~46\,\% (from~\num{0.146} to~\num{0.213}) on the Netherlands-only labelled set, with the most striking single result being the rescue of the rare \emph{weather} class from F1=\num{0.000} to F1=\num{0.509}. We also document where transfer to Italy and Finland fails -- a covariate-shift / class-balance pathology that affects every multi-class classifier we tested -- and outline the recommended fix path.
+
+The full code, data manifests, 32-test suite, 51 inspection figures, an embedded \SI{809}{MB} Knowledge Graph, and the LaTeX source for this report are available in the project repository. The pipeline is reproducible from raw open data with three shell commands.
+
+\paragraph{Future work.} The main open directions are: (i) a generator-based BiLSTM packer to bring the sequence model back into the benchmark; (ii) per-country mean-variance alignment of weather feature scales to fix the FI weather under-prediction; (iii) Italy-specific cause labels collected via a small operations-team annotation effort, enough to fine-tune locally and break the NL$\to$IT transfer ceiling; (iv) hierarchical cause modelling (predict \texttt{cause\_group} then sub-cause within group); (v) live integration with Sparksee~\cite{sparksee2024} once its binary becomes available.

@@ -1,0 +1,49 @@
+\section{Models and training}
+\label{sec:models}
+
+\subsection{Architectures}
+
+We benchmark four model families, trained twice each (scenario A pre-departure and scenario B inflight) on identical splits:
+
+\begin{enumerate}
+    \item \textbf{Logistic Regression} (\texttt{sklearn})~\cite{pedregosa2011scikit} -- balanced class weights, \texttt{saga} solver, \texttt{max\_iter}=2000. The mandatory linear baseline.
+    \item \textbf{LightGBM}~\cite{ke2017lightgbm} -- 1500 trees, \texttt{num\_leaves}=63, max depth 7, \texttt{scale\_pos\_weight} = $n_\text{neg}/n_\text{pos}$, early stopping on val PR-AUC.
+    \item \textbf{XGBoost}~\cite{chen2016xgboost} -- 1500 trees, \texttt{tree\_method='hist'}, \texttt{device='cuda'} auto-detected on a Tesla T4, \texttt{eval\_metric='aucpr'}, \texttt{early\_stopping\_rounds=50}.
+    \item \textbf{GraphSAGE}~\cite{hamilton2017inductive} -- a 2-layer SAGEConv backbone over the station adjacency graph (\num{2397} nodes, \num{163902} directed edges), feeding LayerNorm + Jumping-Knowledge concatenation, then a per-stop MLP head. PyTorch~\cite{paszke2019pytorch} and PyTorch Geometric~\cite{fey2019fast} on the T4.
+\end{enumerate}
+
+A bidirectional / causal LSTM~\cite{schuster1997bidirectional,hochreiter1997long} variant is implemented in \texttt{stop\_level/models/bilstm\_model.py} and unit-tested at synthetic scale. We deferred it from the full benchmark: \texttt{\_pack\_sequences} materialises a \texttt{[\textit{n\_services}, \texttt{max\_stops}, $F$]} padded tensor up-front and at our scale (Netherlands alone has \num{800000}+ services with up to \num{80} stops and 40 features) the materialised tensor exceeds \SI{15}{GB}. Re-instating it requires a generator-based packer, which is out of scope for this paper.
+
+\subsection{Imbalance handling}
+
+All four models use the same imbalance correction strategy on identical splits:
+\begin{itemize}
+    \item Logistic Regression: \texttt{class\_weight='balanced'}.
+    \item LightGBM and XGBoost: \texttt{scale\_pos\_weight} = $n_\text{neg}/n_\text{pos}$ with \texttt{n\_neg\_pos\_ratio} computed on train.
+    \item GraphSAGE: BCE-with-logits loss with the same \texttt{pos\_weight}.
+\end{itemize}
+
+\subsection{Decision threshold}
+
+The shared base class \texttt{StopModel.tune\_threshold(y, p)} sweeps 19 candidate thresholds in \([0.05,~0.95]\), returns the one maximising val F1, and stores it on the model. Inference uses the persisted threshold rather than a static~\num{0.5}.
+
+\subsection{Training run-times}
+
+\cref{tab:train-times} reports wall-clock fit times. The T4 makes XGB and GraphSAGE the two fastest models; LightGBM scenario~B is the slowest single fit at $\sim$13~min, because the inflight features pack so much signal that the model converges to a deeper tree set before early stopping fires.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Wall-clock fit times (T4 GPU when applicable). Both scenarios use identical splits.}
+    \label{tab:train-times}
+    \small
+    \begin{tabular}{lrrl}
+        \toprule
+        Model & Scenario A & Scenario B & Notes \\
+        \midrule
+        Logistic Regression & \SI{135}{s} & \SI{168}{s} & CPU only \\
+        LightGBM            & \SI{80}{s}  & \SI{787}{s} & CPU; B converges deeper \\
+        XGBoost             & \SI{70}{s}  & \SI{185}{s} & CUDA on T4 \\
+        GraphSAGE           & \SI{74}{s}  & \SI{134}{s} & CUDA on T4 \\
+        \bottomrule
+    \end{tabular}
+\end{table}

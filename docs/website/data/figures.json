@@ -1,0 +1,65 @@
+{
+  "preprocessing": {
+    "italy": [
+      "step_01_streaming_load.png",
+      "step_02_sentinel_breakdown.png",
+      "step_03_delay_distribution.png",
+      "step_04_weather_severity.png",
+      "step_05_station_map.png",
+      "step_06_topology.png",
+      "step_07_service_labelling.png",
+      "step_08_faults.png"
+    ],
+    "finland": [
+      "step_01_raw_inventory.png",
+      "step_02_parse_explode.png",
+      "step_03_coercion.png",
+      "step_04_date_filter.png",
+      "step_05_cancellation.png",
+      "step_06_imputation.png",
+      "step_07_snow_distribution.png",
+      "step_08_severity.png",
+      "step_09_station_map.png",
+      "step_10_service_rates.png",
+      "step_11_adjacency.png"
+    ],
+    "netherlands": [
+      "step_01_loading.png",
+      "step_03_date_filter.png",
+      "step_04_cancellation.png",
+      "step_05_openmeteo.png",
+      "step_06_severity.png",
+      "step_07_station_map.png",
+      "step_08_tariff.png",
+      "step_09_causes.png",
+      "step_10_service_rates.png"
+    ]
+  },
+  "evaluation": [
+    "calibration_grid.png",
+    "cascading_respect.png",
+    "confusion_grid.png",
+    "metrics_summary_A.png",
+    "metrics_summary_B.png",
+    "per_country_metrics.png",
+    "per_position_metrics.png",
+    "per_train_class_metrics.png",
+    "pr_roc_grid.png"
+  ],
+  "xai": [
+    "global_summary_bar_A.png",
+    "global_summary_bar_B.png",
+    "global_summary_beeswarm_A.png",
+    "global_summary_beeswarm_B.png",
+    "lag_ablation.png",
+    "local_waterfall_AB_flip.png",
+    "local_waterfall_fn.png",
+    "local_waterfall_fp.png",
+    "local_waterfall_tp.png",
+    "scenario_uplift_map.png",
+    "shap_by_country.png",
+    "shap_by_position.png",
+    "shap_by_train_class.png",
+    "shap_dependence_top5.png"
+  ]
+}
