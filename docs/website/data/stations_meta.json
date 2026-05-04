@@ -1,0 +1,18 @@
+{
+  "total_with_coords": 1935,
+  "domestic_per_country": {
+    "IT": 1397,
+    "FI": 0,
+    "NL": 477
+  },
+  "international_per_country": {
+    "IT": 0,
+    "FI": 0,
+    "NL": 61
+  },
+  "missing_coords_per_country": {
+    "IT": 0,
+    "FI": 451,
+    "NL": 11
+  }
+}

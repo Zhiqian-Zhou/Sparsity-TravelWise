@@ -14,9 +14,9 @@
 \usepackage{subcaption}
 \usepackage{float}
 \usepackage{caption}
-\captionsetup[figure]{font=small, labelfont=bold, justification=raggedright,
+\captionsetup[figure]{font=small, labelfont=bf, justification=raggedright,
                        singlelinecheck=false}
-\captionsetup[table]{font=small, labelfont=bold, justification=raggedright,
+\captionsetup[table]{font=small, labelfont=bf, justification=raggedright,
                       singlelinecheck=false}
 
 % Tables
@@ -77,5 +77,6 @@
 \fancyhead[R]{\small \thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 
-% Graphics paths so figures pull from the symlinked dirs
-\graphicspath{{./preprocessing/}{./stop_level/}{./figures/}}
+% Graphics paths — all figures live under ./figures/ as physical copies
+% (no symlinks; the latex/ folder is fully self-contained for Overleaf).
+\graphicspath{{./figures/}}

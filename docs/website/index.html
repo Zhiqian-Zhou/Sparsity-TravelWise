@@ -28,9 +28,10 @@
       <a href="#models">Models</a>
       <a href="#xai">SHAP</a>
       <a href="#cause">Causes</a>
-      <a href="#map">Map</a>
+      <a href="#map-section">Map</a>
       <a href="#predict">Predict</a>
-      <a href="#kg">KG</a>
+      <a href="#cause-play">Cause Lab</a>
+      <a href="kg.html">KG ↗</a>
     </nav>
     <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode" title="Toggle theme">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -147,67 +148,85 @@
     <div class="tabs" id="map-country-tabs">
       <button data-country="" class="active">All countries</button>
       <button data-country="IT">🇮🇹 Italy</button>
-      <button data-country="FI">🇫🇮 Finland</button>
+      <button data-country="FI" title="Finland — see disclaimer below">🇫🇮 Finland</button>
       <button data-country="NL">🇳🇱 Netherlands</button>
     </div>
     <div class="map-legend">
-      <span class="lg-item"><span class="lg-dot" style="background:#43A047"></span>IT</span>
+      <span class="lg-item"><span class="lg-dot" style="background:#43A047"></span>IT (domestic)</span>
       <span class="lg-item"><span class="lg-dot" style="background:#1E88E5"></span>FI</span>
-      <span class="lg-item"><span class="lg-dot" style="background:#FFA000"></span>NL</span>
-      <span class="lg-item muted">size = degree · ring = avg delay</span>
+      <span class="lg-item"><span class="lg-dot" style="background:#FFA000"></span>NL (domestic)</span>
+      <span class="lg-item"><span class="lg-dot" style="background:#A78BFA;border-style:dashed"></span>cross-border (international)</span>
+      <span class="lg-item muted">opacity = avg delay</span>
     </div>
   </div>
+  <div id="map-disclaimer" class="map-disclaimer" hidden></div>
   <div id="map" role="region" aria-label="Interactive station map"></div>
 </section>
 
-<!-- ─────────── Section: prediction panel ─────────── -->
+<!-- ─────────── Section: prediction playground ─────────── -->
 <section class="section" id="predict">
   <div class="section-head">
-    <h2>⑤ Prediction panel</h2>
-    <p class="lead">Pick a stop from the 5,000-row test sample (XGBoost / Scenario B winner). Shows model
-      probability + Knowledge-Graph bridge query.</p>
+    <h2>⑤ Disruption prediction playground</h2>
+    <p class="lead">Pick a stop and watch the XGBoost model score it under <strong>both
+      scenarios</strong> (pre-departure A and inflight B). The interesting cases are the
+      ones where A and B disagree — see the cascade in action.</p>
   </div>
 
   <div class="grid grid-2">
-    <div class="card">
-      <h3>Look up a stop</h3>
+    <div class="card pred-card">
+      <h3>Pick a stop</h3>
+      <p class="muted" style="margin-bottom:14px">Filters update the result panel <em>live</em>. Use the quick-pick buttons for surprise.</p>
       <div class="form-grid">
         <label>Country
           <select id="pred-country">
-            <option value="">Any</option>
-            <option value="IT">Italy</option>
-            <option value="FI">Finland</option>
-            <option value="NL">Netherlands</option>
+            <option value="">Any country</option>
+            <option value="IT">🇮🇹 Italy</option>
+            <option value="FI">🇫🇮 Finland</option>
+            <option value="NL">🇳🇱 Netherlands</option>
           </select>
         </label>
-        <label>Probability bucket
+        <label>Probability bucket (B)
           <select id="pred-bucket">
             <option value="">Any</option>
-            <option value="low">Low (&lt;25%)</option>
+            <option value="low">Low risk (&lt;25%)</option>
             <option value="mid_low">Mid-low (25–50%)</option>
             <option value="mid_high">Mid-high (50–75%)</option>
-            <option value="high">High (&gt;75%)</option>
+            <option value="high">High risk (&gt;75%)</option>
           </select>
         </label>
-        <label>Service ID (optional)
-          <input id="pred-service" type="text" placeholder="e.g. NL_RDT-12345">
+        <label>Service contains
+          <input id="pred-service" type="text" placeholder="e.g. NL_RDT, IT_SVC0042">
         </label>
-        <label>Date (optional)
+        <label>Date (June 2024)
           <input id="pred-date" type="date" min="2024-06-01" max="2024-06-30">
         </label>
       </div>
-      <div style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap">
-        <button class="btn" id="pred-random">Random sample</button>
-        <button class="btn ghost" id="pred-tp">Highest-confidence TP</button>
-        <button class="btn ghost" id="pred-fp">Confident FP</button>
+      <div class="pred-actions">
+        <button class="btn" id="pred-random">🎲 Random</button>
+        <button class="btn ghost" id="pred-tp">🎯 High-conf TP</button>
+        <button class="btn ghost" id="pred-fp">⚠️ Confident FP</button>
+        <button class="btn ghost" id="pred-fn">😢 Worst miss</button>
+        <button class="btn ghost" id="pred-flip">🔁 A↔B disagree</button>
       </div>
+      <div class="pred-counter muted" id="pred-counter">— matches in sample</div>
     </div>
 
-    <div class="card">
-      <h3>Prediction result</h3>
+    <div class="card pred-card">
+      <h3>Model verdict</h3>
       <div id="pred-result" class="pred-result hidden">
-        <div class="pred-prob" id="pred-prob">—</div>
-        <div class="pred-bar"><div class="pred-bar-fill" id="pred-fill"></div></div>
+        <div class="pred-prob-row">
+          <div class="pred-scenario">
+            <div class="ps-label">Scenario A <span class="tag">pre-departure</span></div>
+            <div class="ps-prob" id="pred-prob-a">—</div>
+            <div class="pred-bar"><div class="pred-bar-fill" id="pred-fill-a"></div></div>
+          </div>
+          <div class="pred-scenario pred-scenario-b">
+            <div class="ps-label">Scenario B <span class="tag primary">inflight</span></div>
+            <div class="ps-prob" id="pred-prob-b">—</div>
+            <div class="pred-bar"><div class="pred-bar-fill" id="pred-fill-b"></div></div>
+          </div>
+        </div>
+        <div class="pred-flip-banner" id="pred-flip-banner" hidden></div>
         <dl class="pred-detail">
           <div><dt>Service</dt><dd class="mono" id="d-service">—</dd></div>
           <div><dt>Station</dt><dd class="mono" id="d-station">—</dd></div>
@@ -216,25 +235,119 @@
           <div><dt>Train class</dt><dd class="mono" id="d-class">—</dd></div>
           <div><dt>Country</dt><dd class="mono" id="d-country">—</dd></div>
           <div><dt>Actual delay</dt><dd class="mono" id="d-delay">—</dd></div>
-          <div><dt>Outcome</dt><dd id="d-outcome">—</dd></div>
+          <div><dt>Outcome (B)</dt><dd id="d-outcome">—</dd></div>
         </dl>
       </div>
-      <p id="pred-empty" class="muted">No selection yet. Use the form to pick a stop.</p>
+      <p id="pred-empty" class="muted">No selection yet. Use the form on the left.</p>
     </div>
   </div>
 
-  <div class="card" id="kg-card" style="margin-top:18px;display:none">
-    <h3>Knowledge-Graph bridge</h3>
-    <p class="muted">Cypher query result for the selected stop, joining station context, recent faults
-      (14 d window) and adjacent stations.</p>
-    <div class="kg-bridge" id="kg-output"></div>
+  <div class="grid grid-2" style="margin-top:18px">
+    <div class="card" id="pred-drivers-card" style="display:none">
+      <h3>Why? Top drivers (SHAP-style)</h3>
+      <p class="muted">Per-row feature snapshot vs the dataset distribution. Bigger green bar = pushes
+        toward "disrupted"; bigger red bar = pushes toward "on-time".</p>
+      <div id="pred-drivers"></div>
+    </div>
+
+    <div class="card" id="kg-card" style="display:none">
+      <h3>🔗 Knowledge-Graph bridge</h3>
+      <p class="muted">Live KG context for the selected stop (mocked client-side from the same
+        graph data the live Kuzu DB serves in 52 ms).</p>
+      <div class="kg-bridge" id="kg-output"></div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─────────── Section: cause playground ─────────── -->
+<section class="section" id="cause-play">
+  <div class="section-head">
+    <h2>⑥ Cause-of-disruption playground (v2)</h2>
+    <p class="lead">Filter the v2 cause-prediction samples by country, weather, time and stop position.
+      The chart and the table re-render <em>live</em>. NL has ground-truth cause labels;
+      IT and FI are <strong>transferred predictions</strong> — see <code>docs/CAUSE_V2.md</code>
+      for the trust score per country.</p>
+  </div>
+
+  <div class="cause-toolbar">
+    <div class="cause-toolbar-group">
+      <label class="kg-label">Country</label>
+      <div class="tabs" id="cause-country-tabs">
+        <button data-country="NL" class="active">🇳🇱 NL <small>(ground truth)</small></button>
+        <button data-country="IT">🇮🇹 IT <small>(transfer)</small></button>
+        <button data-country="FI">🇫🇮 FI <small>(transfer)</small></button>
+      </div>
+    </div>
+    <div class="cause-toolbar-group">
+      <label class="kg-label">Weather severity</label>
+      <input type="range" id="cause-weather" min="0" max="4" step="1" value="-1" class="cause-slider">
+      <span class="cause-slider-val" id="cause-weather-val">any</span>
+    </div>
+    <div class="cause-toolbar-group">
+      <label class="kg-label">Hour of day</label>
+      <input type="range" id="cause-hour" min="0" max="23" step="1" value="-1" class="cause-slider">
+      <span class="cause-slider-val" id="cause-hour-val">any</span>
+    </div>
+    <div class="cause-toolbar-group">
+      <label class="kg-label">Stop position</label>
+      <select id="cause-position">
+        <option value="">Any</option>
+        <option value="origin">Origin (first stop)</option>
+        <option value="early">Early (0-25%)</option>
+        <option value="mid">Mid (25-75%)</option>
+        <option value="late">Late (75%-end)</option>
+        <option value="terminus">Terminus (last)</option>
+      </select>
+    </div>
+    <div class="cause-toolbar-group">
+      <label class="kg-label">Train class</label>
+      <select id="cause-class">
+        <option value="">Any</option>
+        <option value="0">Local / Commuter</option>
+        <option value="1">Express / Semi-fast</option>
+        <option value="2">InterCity</option>
+        <option value="3">EuroCity / International</option>
+        <option value="4">High-Speed</option>
+        <option value="5">Ultra-HS</option>
+        <option value="6">Other / Unknown</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="grid grid-2" style="margin-top:18px">
+    <div class="card">
+      <h3>Predicted cause distribution</h3>
+      <div class="chart" id="chart-cause-play" style="height:340px"></div>
+      <div class="cause-stats muted" id="cause-stats">— rows match these filters</div>
+    </div>
+
+    <div class="card">
+      <h3>Sample of matching rows</h3>
+      <p class="muted">Click any row to see the full feature vector.</p>
+      <div class="cause-table-wrap">
+        <table class="cause-table" id="cause-table">
+          <thead><tr>
+            <th>service</th><th>station</th><th>date</th>
+            <th class="num">delay</th><th class="num">sev</th><th>predicted cause</th>
+            <th class="num">conf</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="cause-row-detail" style="display:none;margin-top:18px">
+    <h3>Row inspector</h3>
+    <div id="cause-row-content"></div>
   </div>
 </section>
 
 <!-- ─────────── Section: KG stats + viz ─────────── -->
 <section class="section" id="kg">
   <div class="section-head">
-    <h2>⑥ Knowledge Graph</h2>
+    <h2>⑦ Knowledge Graph</h2>
     <p class="lead">An <strong>809 MB</strong> embedded Kuzu graph — Sparksee-portable. 6 tables, 16.75 M relationships, bridge query in 52 ms. Below: the <strong>schema</strong> (metadata-level KG) and a live-rendered <strong>sample subgraph</strong> of 102 entities.</p>
   </div>
   <div class="grid grid-3">
@@ -246,27 +359,11 @@
     <div class="metric success card"><div class="v">52 ms</div><div class="l">Bridge query latency</div></div>
   </div>
 
-  <div class="grid grid-2" style="margin-top:24px">
-    <div class="card">
-      <h3>Schema graph (metadata)</h3>
-      <p class="muted">3 node tables (Station, TrainService, FaultEvent) and 3 relationship
-        tables. Click a node to see its property fields.</p>
-      <div id="kg-schema" class="kg-graph" role="img" aria-label="KG schema graph"></div>
-      <div id="kg-schema-detail" class="kg-detail muted">Click a node or edge to inspect its properties.</div>
-    </div>
-
-    <div class="card">
-      <h3>Sample subgraph (data instances)</h3>
-      <p class="muted">36 hub stations × 1-hop adjacency + a sample of services and fault events.
-        Drag nodes to rearrange; scroll to zoom; click for details.</p>
-      <div class="tabs" id="kg-layout-tabs" style="margin-bottom:8px">
-        <button data-layout="cose" class="active">Force-directed</button>
-        <button data-layout="concentric">Concentric</button>
-        <button data-layout="grid">Grid</button>
-      </div>
-      <div id="kg-sample" class="kg-graph" role="img" aria-label="Sample subgraph"></div>
-      <div id="kg-sample-detail" class="kg-detail muted">Click an entity to see its key fields.</div>
-    </div>
+  <div class="card" style="margin-top:24px;text-align:center;padding:32px">
+    <h3>🌐 Explore the full Knowledge Graph</h3>
+    <p class="muted">Interactive Cytoscape visualisation with fcose layout, search, type filters,
+      neighbour-dimming, and a property inspector — on its own dedicated page.</p>
+    <a href="kg.html" class="btn" style="margin-top:8px;display:inline-block">Open the KG explorer →</a>
   </div>
 
   <div class="card" style="margin-top:24px">
