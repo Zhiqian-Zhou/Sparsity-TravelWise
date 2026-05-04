@@ -6,9 +6,14 @@ const STATE = {
   causes: null,
   stations: null,
   predictions: null,
+  kg: null,
   scenario: "A",
   metric: "test_pr_auc",
   charts: {},
+  cy: { schema: null, sample: null },
+  map: null,
+  mapCluster: null,
+  mapCountry: "",
   theme: localStorage.getItem("travelwise-theme") || "auto",
 };
 
@@ -54,15 +59,16 @@ applyTheme(STATE.theme === "auto" ? null : STATE.theme);
 
 // ── Data load (parallel) ───────────────────────────────────────────────
 async function loadAll() {
-  const [b, x, c, s, p] = await Promise.all([
+  const [b, x, c, s, p, kg] = await Promise.all([
     fetch("data/benchmark.json").then(r => r.json()),
     fetch("data/xai.json").then(r => r.json()),
     fetch("data/causes.json").then(r => r.json()),
     fetch("data/stations.json").then(r => r.json()),
     fetch("data/predictions_sample.json").then(r => r.json()),
+    fetch("data/kg_sample.json").then(r => r.json()),
   ]);
   STATE.benchmark = b; STATE.xai = x; STATE.causes = c;
-  STATE.stations = s;  STATE.predictions = p;
+  STATE.stations = s;  STATE.predictions = p; STATE.kg = kg;
   hydrateHero();
   drawBenchmarkBars();
   drawBreakdowns();
@@ -70,6 +76,8 @@ async function loadAll() {
   drawCauseCharts();
   drawMap();
   wirePredict();
+  drawKgSchema();
+  drawKgSample();
 }
 
 // ── Hero stats ─────────────────────────────────────────────────────────
@@ -265,9 +273,12 @@ function drawCauseTransfer() {
 
 // ── Map ────────────────────────────────────────────────────────────────
 function drawMap() {
+  if (STATE.map) { STATE.map.remove(); STATE.map = null; }
   const isDark = document.documentElement.getAttribute("data-theme") === "dark"
                   || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  const map = L.map("map", { preferCanvas: true }).setView([54, 10], 4);
+  const map = L.map("map", { preferCanvas: true, worldCopyJump: false })
+              .setView([52, 10], 4);
+  STATE.map = map;
   const tiles = isDark
     ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
     : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
@@ -275,28 +286,277 @@ function drawMap() {
     attribution: "© OpenStreetMap · © CARTO",
     maxZoom: 14,
   }).addTo(map);
-  // Down-sample: keep a max of 3 markers per 1° lat/lon cell to avoid clutter
-  const seen = new Map();
-  const sampled = [];
-  for (const s of STATE.stations) {
-    const key = `${Math.round(s.lat * 2)},${Math.round(s.lon * 2)}`;
-    const arr = seen.get(key) || [];
-    if (arr.length < 3) {
-      arr.push(s); seen.set(key, arr); sampled.push(s);
+
+  // Show ALL stations (not down-sampled) but use marker clustering so the
+  // map stays readable at low zoom. At zoom 8+, individual markers appear.
+  const cluster = L.markerClusterGroup({
+    showCoverageOnHover: false,
+    maxClusterRadius: 50,
+    spiderfyOnMaxZoom: true,
+    chunkedLoading: true,
+  });
+  STATE.mapCluster = cluster;
+
+  applyMapFilter();
+  map.addLayer(cluster);
+  // Auto-fit to show all markers
+  setTimeout(() => {
+    const all = STATE.stations.filter(s => !STATE.mapCountry || s.country === STATE.mapCountry);
+    if (all.length) {
+      const lats = all.map(s => s.lat), lons = all.map(s => s.lon);
+      map.fitBounds([[Math.min(...lats), Math.min(...lons)],
+                     [Math.max(...lats), Math.max(...lons)]],
+                    { padding: [40, 40] });
     }
-  }
-  for (const s of sampled) {
-    const radius = 3 + Math.log2(1 + (s.degree || 1)) * 1.5;
-    const t = Math.min(1, (s.delay || 0) / 8);
-    const colour = `rgba(${220 - 50*t},${100 + 60*(1-t)},${50 + 100*(1-t)},0.85)`;
-    L.circleMarker([s.lat, s.lon], {
-      radius, color: COUNTRY_COLOR[s.country], fillColor: colour, fillOpacity: 0.7,
-      weight: 1.5,
-    })
-    .bindTooltip(`<b>${s.id}</b><br/>${s.country} · degree ${s.degree} · avg delay ${s.delay} min`)
-    .addTo(map);
-  }
+  }, 100);
 }
+
+function applyMapFilter() {
+  if (!STATE.mapCluster) return;
+  STATE.mapCluster.clearLayers();
+  const filtered = STATE.stations.filter(s =>
+    !STATE.mapCountry || s.country === STATE.mapCountry
+  );
+  const markers = filtered.map(s => {
+    // size by log(degree); colour by country; fill saturation by avg_delay
+    const radius = 3 + Math.log2(1 + (s.degree || 1)) * 1.6;
+    const t = Math.min(1, (s.delay || 0) / 8);                  // 0..1 normalised delay
+    const baseHex = COUNTRY_COLOR[s.country] || "#888888";
+    return L.circleMarker([s.lat, s.lon], {
+      radius,
+      color: baseHex,
+      fillColor: baseHex,
+      fillOpacity: 0.4 + 0.5 * t,
+      opacity: 0.95,
+      weight: 1.5,
+    }).bindTooltip(
+      `<b>${s.id}</b><br/>${flagFor(s.country)} ${s.country} · degree <code>${s.degree}</code> · avg delay <code>${s.delay} min</code>`,
+      { direction: "top", offset: [0, -6] }
+    ).bindPopup(
+      `<div style="font-family:sans-serif"><b>${s.id}</b><br/>
+        Country: ${flagFor(s.country)} ${s.country}<br/>
+        Coords: <code>${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}</code><br/>
+        Degree: <code>${s.degree}</code><br/>
+        Avg historical delay: <code>${s.delay} min</code></div>`
+    );
+  });
+  STATE.mapCluster.addLayers(markers);
+}
+
+function flagFor(c) { return c === "IT" ? "🇮🇹" : c === "FI" ? "🇫🇮" : c === "NL" ? "🇳🇱" : "🌍"; }
+
+// Country filter wiring
+document.getElementById("map-country-tabs").addEventListener("click", (e) => {
+  if (e.target.dataset.country === undefined) return;
+  document.querySelectorAll("#map-country-tabs button").forEach(b => b.classList.remove("active"));
+  e.target.classList.add("active");
+  STATE.mapCountry = e.target.dataset.country;
+  applyMapFilter();
+  // Re-fit
+  const visible = STATE.stations.filter(s => !STATE.mapCountry || s.country === STATE.mapCountry);
+  if (visible.length && STATE.map) {
+    const lats = visible.map(s => s.lat), lons = visible.map(s => s.lon);
+    STATE.map.fitBounds([[Math.min(...lats), Math.min(...lons)],
+                          [Math.max(...lats), Math.max(...lons)]],
+                          { padding: [40, 40] });
+  }
+});
+
+// ── KG schema graph (the metadata-level KG) ────────────────────────────
+function drawKgSchema() {
+  const container = document.getElementById("kg-schema");
+  if (STATE.cy.schema) STATE.cy.schema.destroy();
+  const sch = STATE.kg.schema;
+
+  const elements = [];
+  for (const n of sch.nodes) {
+    elements.push({ data: {
+      id: n.label, label: n.label, kind: "schema-node",
+      color: n.color, shape: n.shape, fields: n.fields,
+      total: sch.totals[n.label],
+    }});
+  }
+  for (const e of sch.edges) {
+    elements.push({ data: {
+      id: e.label, label: e.label,
+      source: e.from, target: e.to, kind: "schema-edge",
+      fields: e.fields, total: sch.totals[e.label],
+    }});
+  }
+
+  const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+  const cy = cytoscape({
+    container, elements,
+    style: [
+      { selector: "node", style: {
+        "label": "data(label)",
+        "background-color": "data(color)",
+        "shape": "data(shape)",
+        "color": isDark ? "#f3f4f6" : "#1f2937",
+        "text-valign": "center", "text-halign": "center",
+        "font-family": "Inter, sans-serif", "font-size": 13, "font-weight": 600,
+        "text-outline-width": 2,
+        "text-outline-color": isDark ? "#0f172a" : "#ffffff",
+        "border-width": 2,
+        "border-color": "data(color)",
+        "width": 90, "height": 60,
+      }},
+      { selector: "edge", style: {
+        "label": "data(label)",
+        "curve-style": "bezier",
+        "target-arrow-shape": "triangle",
+        "target-arrow-color": "#888",
+        "line-color": "#888",
+        "width": 2,
+        "font-size": 11,
+        "color": isDark ? "#d1d5db" : "#6b7280",
+        "text-background-color": isDark ? "#0f172a" : "#ffffff",
+        "text-background-opacity": 0.85, "text-background-padding": 2,
+        "text-rotation": "autorotate",
+      }},
+      { selector: ":selected", style: { "border-width": 4, "border-color": "#7c3aed" }},
+    ],
+    layout: { name: "cose", animate: true, idealEdgeLength: 140, padding: 30 },
+    minZoom: 0.4, maxZoom: 2.5,
+    wheelSensitivity: 0.2,
+  });
+  STATE.cy.schema = cy;
+
+  const det = document.getElementById("kg-schema-detail");
+  cy.on("tap", "node", (evt) => {
+    const d = evt.target.data();
+    det.innerHTML = `<span class="kg-pill ${d.label.toLowerCase()}">${d.label}</span> ` +
+      `<strong>${d.total?.toLocaleString() ?? "?"}</strong> instances` +
+      `<ul>${d.fields.map(f => `<li><code>${f}</code></li>`).join("")}</ul>`;
+  });
+  cy.on("tap", "edge", (evt) => {
+    const d = evt.target.data();
+    det.innerHTML = `<span class="kg-pill">${d.label}</span> ` +
+      `<strong>${d.total?.toLocaleString() ?? "?"}</strong> instances` +
+      (d.fields.length
+        ? `<ul>${d.fields.map(f => `<li><code>${f}</code></li>`).join("")}</ul>`
+        : `<div class="muted" style="margin-top:4px">No properties beyond endpoints.</div>`);
+  });
+}
+
+// ── KG sample subgraph (real instances) ────────────────────────────────
+function drawKgSample(layoutName = "cose") {
+  const container = document.getElementById("kg-sample");
+  if (STATE.cy.sample) STATE.cy.sample.destroy();
+  const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+  const KIND_COLOR = {
+    "Station":     "#1E88E5",
+    "TrainService":"#43A047",
+    "FaultEvent":  "#E53935",
+  };
+  const KIND_SHAPE = {
+    "Station":     "ellipse",
+    "TrainService":"round-rectangle",
+    "FaultEvent":  "diamond",
+  };
+  const elements = [];
+  for (const n of STATE.kg.sample.nodes) {
+    elements.push({ data: {
+      id: n.id,
+      label: shortLabel(n),
+      kind: n.kind,
+      color: KIND_COLOR[n.kind] || "#888",
+      shape: KIND_SHAPE[n.kind] || "ellipse",
+      meta: n,
+      isHub: !!n.is_hub,
+    }});
+  }
+  for (const e of STATE.kg.sample.edges) {
+    elements.push({ data: {
+      id: `${e.source}->${e.target}-${e.kind}`,
+      source: e.source, target: e.target,
+      kind: e.kind, label: e.kind,
+    }});
+  }
+  const cy = cytoscape({
+    container, elements,
+    style: [
+      { selector: "node", style: {
+        "label": "data(label)",
+        "background-color": "data(color)",
+        "shape": "data(shape)",
+        "color": isDark ? "#f3f4f6" : "#1f2937",
+        "text-valign": "center", "text-halign": "center",
+        "font-family": "JetBrains Mono, monospace", "font-size": 9,
+        "text-outline-width": 2,
+        "text-outline-color": isDark ? "#0f172a" : "#ffffff",
+        "border-width": 1, "border-color": "data(color)",
+        "width": 28, "height": 28,
+      }},
+      { selector: "node[?isHub]", style: {
+        "width": 44, "height": 44, "border-width": 3, "font-size": 10,
+        "border-color": "#7c3aed",
+      }},
+      { selector: "node[kind='TrainService']", style: { "width": 32, "height": 18 }},
+      { selector: "node[kind='FaultEvent']",   style: { "width": 24, "height": 24 }},
+      { selector: "edge", style: {
+        "curve-style": "bezier",
+        "target-arrow-shape": "triangle",
+        "target-arrow-color": "#aaa",
+        "line-color": "#bbb",
+        "width": 1,
+        "opacity": 0.55,
+      }},
+      { selector: "edge[kind='STOPS_AT']",    style: { "line-color": "#43A047", "target-arrow-color": "#43A047" }},
+      { selector: "edge[kind='REPORTED_AT']", style: { "line-color": "#E53935", "target-arrow-color": "#E53935" }},
+      { selector: ":selected", style: { "border-width": 4, "border-color": "#7c3aed", "opacity": 1 }},
+    ],
+    layout: layoutFor(layoutName),
+    minZoom: 0.2, maxZoom: 3,
+    wheelSensitivity: 0.2,
+  });
+  STATE.cy.sample = cy;
+
+  const det = document.getElementById("kg-sample-detail");
+  cy.on("tap", "node", (evt) => {
+    const d = evt.target.data();
+    const m = d.meta || {};
+    let body = "";
+    if (d.kind === "Station") {
+      body = `<ul>` +
+        `<li>country: <code>${m.country}</code></li>` +
+        `<li>lat/lon: <code>${m.lat}, ${m.lon}</code></li>` +
+        `<li>degree: <code>${m.degree}</code></li>` +
+        `<li>avg historical delay: <code>${m.delay} min</code></li>` +
+        (m.is_hub ? `<li>🌟 hub station (selected as seed)</li>` : "") +
+        `</ul>`;
+    } else if (d.kind === "TrainService") {
+      body = `<ul><li>service_id: <code>${m.id}</code></li><li>country: <code>${m.country}</code></li></ul>`;
+    } else if (d.kind === "FaultEvent") {
+      body = `<ul><li>fault_id: <code>${m.id}</code></li><li>date: <code>${m.date}</code></li><li>description: <code>${m.description}</code></li></ul>`;
+    }
+    det.innerHTML = `<span class="kg-pill ${d.kind.toLowerCase()}">${d.kind}</span> <code>${m.id || d.label}</code>${body}`;
+  });
+  cy.on("tap", "edge", (evt) => {
+    const d = evt.target.data();
+    det.innerHTML = `<span class="kg-pill">${d.kind}</span> <code>${d.source}</code> → <code>${d.target}</code>`;
+  });
+}
+
+function shortLabel(n) {
+  if (n.kind === "Station") return n.id.replace(/^[A-Z]{2}_/, "");
+  if (n.kind === "TrainService") return "🚆";
+  if (n.kind === "FaultEvent")  return "⚠";
+  return n.id;
+}
+function layoutFor(name) {
+  if (name === "concentric") return { name: "concentric", animate: true,
+    concentric: n => n.data("isHub") ? 100 : 1, levelWidth: () => 1 };
+  if (name === "grid") return { name: "grid", animate: true, padding: 20 };
+  return { name: "cose", animate: true, idealEdgeLength: 90, padding: 30,
+            nodeRepulsion: 6000, edgeElasticity: 100 };
+}
+document.getElementById("kg-layout-tabs").addEventListener("click", (e) => {
+  if (!e.target.dataset.layout) return;
+  document.querySelectorAll("#kg-layout-tabs button").forEach(b => b.classList.remove("active"));
+  e.target.classList.add("active");
+  drawKgSample(e.target.dataset.layout);
+});
 
 // ── Prediction panel ───────────────────────────────────────────────────
 function wirePredict() {

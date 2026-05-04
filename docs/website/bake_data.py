@@ -98,7 +98,7 @@ causes = {
 (OUT / "causes.json").write_text(json.dumps(causes, indent=2, default=str))
 
 
-# ── 4. Stations: lat/lon + degree + avg_delay (downsampled if needed) ─────────
+# ── 4. Stations: lat/lon + degree + avg_delay (full set, lightly filtered) ────
 print("[4/6] Baking stations.json ...")
 parts = []
 for c in ("Italy", "Finland", "Netherlands"):
@@ -106,10 +106,19 @@ for c in ("Italy", "Finland", "Netherlands"):
     df = pd.read_csv(p)
     df["country"] = "FI" if c == "Finland" else ("NL" if c == "Netherlands" else "IT")
     parts.append(df)
-sta = pd.concat(parts, ignore_index=True).drop_duplicates("station_id", keep="first")
-# Drop NaN coords + clip outliers (some IT international stops have weird coords)
-sta = sta.dropna(subset=["lat", "lon"])
-sta = sta[(sta["lat"].between(35, 72)) & (sta["lon"].between(-10, 35))]
+sta_all = pd.concat(parts, ignore_index=True).drop_duplicates("station_id", keep="first")
+n_total = len(sta_all)
+# Drop NaN coords; relax the bounding box to keep international cross-border
+# stops (NL→Berlin/Brussels/Vienna; IT→Switzerland/France); only filter
+# obvious outliers (lat 0/0 placeholders, etc).
+sta = sta_all.dropna(subset=["lat", "lon"]).copy()
+sta = sta[(sta["lat"].between(-90, 90)) & (sta["lon"].between(-180, 180))]
+sta = sta[~((sta["lat"] == 0) & (sta["lon"] == 0))]                  # drop 0,0 placeholders
+sta = sta[(sta["lat"].between(30, 75)) & (sta["lon"].between(-15, 40))]   # Europe envelope
+n_kept = len(sta)
+n_no_coords = n_total - len(sta_all.dropna(subset=["lat", "lon"]))
+print(f"  total stations: {n_total}, with coords: {n_total - n_no_coords}, "
+      f"after Europe filter: {n_kept}")
 sta_out = []
 for _, row in sta.iterrows():
     sta_out.append({
@@ -121,8 +130,126 @@ for _, row in sta.iterrows():
         "delay":   round(float(row["avg_historical_delay"]), 2)
                     if pd.notna(row["avg_historical_delay"]) else 0.0,
     })
-print(f"  → {len(sta_out)} stations after coordinate filter")
 (OUT / "stations.json").write_text(json.dumps(sta_out))
+
+
+# ── 4b. KG sample: a representative subgraph for in-browser visualisation ────
+print("[4b/6] Baking kg_sample.json ...")
+# Pick ~12 hub stations per country (high degree) and seed the neighborhood
+import collections
+adj_parts = []
+for c in ("Italy", "Finland", "Netherlands"):
+    p = ROOT / "Data" / c / "processed" / "edges_adjacent.csv"
+    if p.exists():
+        adj_parts.append(pd.read_csv(p))
+adj_all = pd.concat(adj_parts, ignore_index=True).drop_duplicates(["station_from", "station_to"])
+# Build a station_id → neighbours dict
+adj_dict = collections.defaultdict(set)
+for _, r in adj_all.iterrows():
+    adj_dict[r["station_from"]].add(r["station_to"])
+
+valid_ids = set(s["id"] for s in sta_out)
+# Top-k per country by degree (proxy for hub-ness)
+hubs = []
+for cc in ("IT", "FI", "NL"):
+    pool = [s for s in sta_out if s["country"] == cc]
+    pool.sort(key=lambda s: -s["degree"])
+    hubs += pool[:12]                    # 12 per country = 36 hubs total
+seed_ids = {h["id"] for h in hubs}
+
+# Expand: add 1-hop neighbours of each hub (up to 4 each, to cap total nodes)
+expanded = set(seed_ids)
+for sid in seed_ids:
+    for nbr in list(adj_dict.get(sid, set()))[:4]:
+        if nbr in valid_ids:
+            expanded.add(nbr)
+
+# Build kg_sample with nodes + edges
+node_lookup = {s["id"]: s for s in sta_out}
+kg_nodes = [
+    {**node_lookup[i], "kind": "Station", "is_hub": (i in seed_ids)}
+    for i in expanded if i in node_lookup
+]
+kg_edges = []
+for fr in expanded:
+    for to in adj_dict.get(fr, set()):
+        if to in expanded and fr != to:
+            kg_edges.append({"source": fr, "target": to, "kind": "ADJACENT_TO"})
+
+# Add a few sample services + fault events per hub for richness
+print(f"  KG sample: {len(kg_nodes)} stations + {len(kg_edges)} ADJACENT_TO edges")
+# Sample some services that visit hubs
+svc_chunks = []
+for c in ("Italy", "Finland", "Netherlands"):
+    p = ROOT / "Data" / c / "processed" / "edges_stops_at.csv"
+    if p.exists():
+        for chunk in pd.read_csv(p, chunksize=200_000, usecols=["service_id", "station_id"]):
+            chunk = chunk[chunk["station_id"].isin(seed_ids)]
+            svc_chunks.append(chunk)
+            if sum(len(c) for c in svc_chunks) > 500:
+                break
+        if sum(len(c) for c in svc_chunks) > 500:
+            break
+svc_df = pd.concat(svc_chunks, ignore_index=True) if svc_chunks else pd.DataFrame()
+svc_per_hub = svc_df.groupby("station_id")["service_id"].apply(
+    lambda s: list(s.unique())[:3]).to_dict() if len(svc_df) else {}
+# Add up to 3 services per hub as nodes
+for hub_id, svc_ids in svc_per_hub.items():
+    for sid in svc_ids:
+        kg_nodes.append({"id": sid, "kind": "TrainService", "country": node_lookup[hub_id]["country"]})
+        kg_edges.append({"source": sid, "target": hub_id, "kind": "STOPS_AT"})
+
+# Add NL faults (only NL has them)
+faults_p = ROOT / "Data" / "Netherlands" / "processed" / "nodes_fault.csv"
+if faults_p.exists():
+    f = pd.read_csv(faults_p, parse_dates=["date"])
+    # Pick 5 fault events that hit our hubs
+    f_hub = f[f["station_id"].isin(seed_ids)].drop_duplicates("fault_id").head(5)
+    for _, r in f_hub.iterrows():
+        kg_nodes.append({
+            "id":          r["fault_id"],
+            "kind":        "FaultEvent",
+            "date":        str(r["date"])[:10],
+            "description": (str(r["description"])[:60] + "…")
+                            if len(str(r["description"])) > 60 else str(r["description"]),
+        })
+        kg_edges.append({"source": r["fault_id"], "target": r["station_id"], "kind": "REPORTED_AT"})
+
+kg_sample = {
+    "schema": {
+        "nodes": [
+            {"label": "Station", "color": "#1E88E5", "shape": "ellipse",
+             "fields": ["station_id (PK)", "country", "lat", "lon",
+                        "avg_historical_delay", "degree"]},
+            {"label": "TrainService", "color": "#43A047", "shape": "rectangle",
+             "fields": ["service_id (PK)", "country", "train_class_code",
+                        "date", "is_disrupted"]},
+            {"label": "FaultEvent", "color": "#E53935", "shape": "diamond",
+             "fields": ["fault_id (PK)", "date", "description"]},
+        ],
+        "edges": [
+            {"label": "STOPS_AT",    "from": "TrainService", "to": "Station",
+             "fields": ["delay_minutes", "weather_severity",
+                        "temperature", "wind_speed",
+                        "precipitation", "snow_depth"]},
+            {"label": "ADJACENT_TO", "from": "Station", "to": "Station",
+             "fields": ["distance_km"]},
+            {"label": "REPORTED_AT", "from": "FaultEvent", "to": "Station",
+             "fields": []},
+        ],
+        "totals": {
+            "Station": 2397, "TrainService": 1217406, "FaultEvent": 2938,
+            "STOPS_AT": 16586834, "ADJACENT_TO": 163902, "REPORTED_AT": 2938,
+        },
+    },
+    "sample": {
+        "nodes": kg_nodes,
+        "edges": kg_edges,
+        "hub_ids": list(seed_ids),
+    },
+}
+print(f"  total sample: {len(kg_nodes)} nodes, {len(kg_edges)} edges")
+(OUT / "kg_sample.json").write_text(json.dumps(kg_sample, default=str))
 
 
 # ── 5. Sample predictions for the interactive panel (5K rows max) ─────────────

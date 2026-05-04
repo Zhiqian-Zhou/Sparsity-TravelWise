@@ -11,6 +11,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -136,8 +138,24 @@
 <section class="section" id="map-section">
   <div class="section-head">
     <h2>④ Station network map</h2>
-    <p class="lead">All 1,935 valid-coordinate stations across IT, FI, NL. Marker colour encodes
-      avg historical delay; size encodes station degree.</p>
+    <p class="lead">1,935 stations across IT/FI/NL with valid coordinates (462 FI stations
+      lack coords in the FMI source and aren't geographic). Markers cluster
+      at low zoom; expand to individual stations as you zoom in.</p>
+  </div>
+
+  <div class="map-controls">
+    <div class="tabs" id="map-country-tabs">
+      <button data-country="" class="active">All countries</button>
+      <button data-country="IT">🇮🇹 Italy</button>
+      <button data-country="FI">🇫🇮 Finland</button>
+      <button data-country="NL">🇳🇱 Netherlands</button>
+    </div>
+    <div class="map-legend">
+      <span class="lg-item"><span class="lg-dot" style="background:#43A047"></span>IT</span>
+      <span class="lg-item"><span class="lg-dot" style="background:#1E88E5"></span>FI</span>
+      <span class="lg-item"><span class="lg-dot" style="background:#FFA000"></span>NL</span>
+      <span class="lg-item muted">size = degree · ring = avg delay</span>
+    </div>
   </div>
   <div id="map" role="region" aria-label="Interactive station map"></div>
 </section>
@@ -213,11 +231,11 @@
   </div>
 </section>
 
-<!-- ─────────── Section: KG stats ─────────── -->
+<!-- ─────────── Section: KG stats + viz ─────────── -->
 <section class="section" id="kg">
   <div class="section-head">
     <h2>⑥ Knowledge Graph</h2>
-    <p class="lead">An <strong>809 MB</strong> embedded Kuzu graph — Sparksee-portable. 6 tables, 16.75 M relationships, bridge query in 52 ms.</p>
+    <p class="lead">An <strong>809 MB</strong> embedded Kuzu graph — Sparksee-portable. 6 tables, 16.75 M relationships, bridge query in 52 ms. Below: the <strong>schema</strong> (metadata-level KG) and a live-rendered <strong>sample subgraph</strong> of 102 entities.</p>
   </div>
   <div class="grid grid-3">
     <div class="metric primary card"><div class="v" id="kg-stations">2,397</div><div class="l">Stations</div></div>
@@ -226,6 +244,29 @@
     <div class="metric warning card"><div class="v" id="kg-stops">16,586,834</div><div class="l">STOPS_AT edges</div></div>
     <div class="metric warning card"><div class="v" id="kg-adj">163,902</div><div class="l">ADJACENT_TO edges</div></div>
     <div class="metric success card"><div class="v">52 ms</div><div class="l">Bridge query latency</div></div>
+  </div>
+
+  <div class="grid grid-2" style="margin-top:24px">
+    <div class="card">
+      <h3>Schema graph (metadata)</h3>
+      <p class="muted">3 node tables (Station, TrainService, FaultEvent) and 3 relationship
+        tables. Click a node to see its property fields.</p>
+      <div id="kg-schema" class="kg-graph" role="img" aria-label="KG schema graph"></div>
+      <div id="kg-schema-detail" class="kg-detail muted">Click a node or edge to inspect its properties.</div>
+    </div>
+
+    <div class="card">
+      <h3>Sample subgraph (data instances)</h3>
+      <p class="muted">36 hub stations × 1-hop adjacency + a sample of services and fault events.
+        Drag nodes to rearrange; scroll to zoom; click for details.</p>
+      <div class="tabs" id="kg-layout-tabs" style="margin-bottom:8px">
+        <button data-layout="cose" class="active">Force-directed</button>
+        <button data-layout="concentric">Concentric</button>
+        <button data-layout="grid">Grid</button>
+      </div>
+      <div id="kg-sample" class="kg-graph" role="img" aria-label="Sample subgraph"></div>
+      <div id="kg-sample-detail" class="kg-detail muted">Click an entity to see its key fields.</div>
+    </div>
   </div>
 
   <div class="card" style="margin-top:24px">
@@ -254,6 +295,8 @@ RETURN st.station_id, st.country, st.avg_historical_delay, st.degree,
 <!-- Library scripts (CDN) -->
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.0/dist/cytoscape.min.js"></script>
 
 <!-- App scripts -->
 <script type="module" src="js/app.js"></script>
