@@ -84,23 +84,15 @@
   showstringspaces=false, columns=fullflexible,
   upquote=true, escapeinside={(*}{*)},
   tabsize=2,
-  % `listings` is 8-bit-only by default and chokes on stray UTF-8 (em dashes,
-  % en dashes, non-breaking spaces, smart quotes) -- which silently sneak in
-  % when authors paste from notebooks or word processors. Map the offenders
-  % to ASCII-safe equivalents so a single rogue character can't break the
-  % whole build on Overleaf TeXLive 2025.
-  literate=%
-    {—}{{--}}1
-    {–}{{-}}1
-    {“}{{"}}1
-    {”}{{"}}1
-    {‘}{{'}}1
-    {’}{{'}}1
-    { }{{ }}1
-    {…}{{...}}1
-    {≥}{{>=}}1
-    {≤}{{<=}}1,
 }
+% Note: an earlier draft of this preamble carried a `literate=` map that
+% transliterated UTF-8 punctuation (em/en dashes, smart quotes, ellipsis,
+% NBSP, ge/le) to ASCII-safe equivalents. It collided with Cypher's
+% `morestring=[b]'` delimiter (the `'` -> `'` rewrite) and produced
+% "Improper alphabetic constant" errors at every \begin{lstlisting} site.
+% Every lstlisting/verbatim block is now audited ASCII-clean (verified
+% byte-for-byte before each commit), so the defensive map is unnecessary.
+% Do NOT re-add it without testing against a Cypher block.
 
 % ── Bibliography (natbib + bibtex — ~3× faster than biblatex/biber) ──────────
 \usepackage[numbers, sort&compress, square]{natbib}
