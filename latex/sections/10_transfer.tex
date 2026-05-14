@@ -3,62 +3,54 @@
 
 \subsection{Setup}
 
-The cause classifier is trained on Dutch labels because Italy and Finland do not publish equivalent cause data. To assess whether a model trained on Dutch operations generalises across borders, we apply it -- with no fine-tuning -- to all disrupted Italian stops (\num{340319} rows) and all disrupted Finnish stops (\num{865560} rows). The output is a predicted cause distribution; we audit it against published domain knowledge of each country's railway operations.
+The cause classifier is trained on Dutch labels because Italy and Finland do not publish equivalent cause data. To assess whether a model trained on Dutch operations generalises across borders, we apply the winning Dutch classifier -- with no fine-tuning -- to all disrupted Italian stops (\num{340319} rows) and all disrupted Finnish stops (\num{865560} rows). The output is a predicted cause distribution; we audit it against published domain knowledge of each country's railway operations.
 
-\subsection{v1 versus v2 transfer}
+\subsection{Predicted distributions}
 
-\Cref{tab:transfer} compares the predicted cause distributions produced by v1 (the balanced random forest) and v2 (the stacking ensemble) on Italian and Finnish disrupted stops. The v2 distributions are markedly more confident (mean confidence \num{0.600} on Italy versus \num{0.287} for v1), but for the wrong reasons: confidence rises mainly because the model collapses onto a different rare class.
+\Cref{tab:transfer} reports the predicted cause distributions on Italian and Finnish disrupted stops. Mean confidence (the average predicted probability of the chosen class) is \num{0.600} on Italy and \num{0.369} on Finland. Confidence on Italy is high but for the wrong reasons: the model collapses onto \emph{engineering work}, a class on which it scores F1$=$\num{0.000} within the Netherlands.
 
 \begin{table}[htbp]
     \centering
-    \caption{Predicted cause distributions on disrupted stops in Italy and Finland under v1 (random forest) and v2 (stacker). All shares within a column sum to \num{1.000}. The mean-confidence row reports the average predicted probability of the chosen class. v2 is more confident but, in the Italian case, more pathologically so.}
+    \caption{Predicted cause distributions on disrupted stops in Italy and Finland from the Dutch-trained classifier (no fine-tuning). All shares within a column sum to \num{1.000}. The mean-confidence row reports the average predicted probability of the chosen class.}
     \label{tab:transfer}
     \small
-    \begin{tabular}{l S[table-format=1.3] S[table-format=1.3] S[table-format=1.3] S[table-format=1.3]}
+    \begin{tabular}{l S[table-format=1.3] S[table-format=1.3]}
         \toprule
-        & \multicolumn{2}{c}{Italy ($n=$\num{340319})} & \multicolumn{2}{c}{Finland ($n=$\num{865560})} \\
-        \cmidrule(lr){2-3}\cmidrule(lr){4-5}
-        Class & {v1} & {v2} & {v1} & {v2} \\
+        Class & {Italy ($n=$\num{340319})} & {Finland ($n=$\num{865560})} \\
         \midrule
-        rolling stock     & 0.242 & 0.343 & 0.659 & 0.027 \\
-        infrastructure    & 0.028 & 0.000 & 0.015 & 0.302 \\
-        external          & 0.001 & 0.000 & 0.001 & 0.300 \\
-        accidents         & 0.000 & 0.002 & 0.000 & 0.000 \\
-        unknown           & 0.000 & 0.002 & 0.000 & 0.137 \\
-        logistical        & 0.010 & 0.002 & 0.304 & 0.000 \\
-        engineering work  & 0.000 & 0.548 & 0.000 & 0.185 \\
-        staff             & 0.701 & 0.102 & 0.019 & 0.048 \\
-        weather           & 0.019 & 0.000 & 0.003 & 0.001 \\
+        rolling stock     & 0.343 & 0.027 \\
+        infrastructure    & 0.000 & 0.302 \\
+        external          & 0.000 & 0.300 \\
+        accidents         & 0.002 & 0.000 \\
+        unknown           & 0.002 & 0.137 \\
+        logistical        & 0.002 & 0.000 \\
+        engineering work  & 0.548 & 0.185 \\
+        staff             & 0.102 & 0.048 \\
+        weather           & 0.000 & 0.001 \\
         \midrule
-        Mean confidence   & 0.287 & 0.600 & 0.260 & 0.369 \\
+        Mean confidence   & 0.600 & 0.369 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-\subsection{Italy: catastrophic mode collapse, then a different mode collapse}
+\subsection{Italy: mode collapse onto \emph{engineering work}}
 
-In v1 the model assigns \emph{staff} to \SI{70.1}{\percent} of Italian disrupted stops. \emph{Staff} is one of the rarest classes in the training prior at \SI{2.5}{\percent}; the transfer is collapsing onto a class that is meant to be unusual. Two mechanisms are responsible.
+\SI{54.8}{\percent} of Italian disrupted stops are predicted as \emph{engineering work}. Within the Netherlands this class reaches F1$=$\num{0.000} on the held-out test (\cref{tab:cause-perclass}); the Italian prediction is therefore a transfer artefact, not real signal. Two mechanisms compound:
 
 \begin{enumerate}
-    \item \textbf{The Italian \texttt{temperature} column is all zero.} The Phase~1 helper \texttt{lib\_italy.py} zero-fills missing weather columns instead of preserving \texttt{NaN}. The cause model trained on real Dutch temperatures interprets a column of zeros as ``extreme winter conditions'', a feature pattern that the random forest had associated with the \emph{staff} class in training.
-    \item \textbf{Class-balance pathology under domain shift.} On out-of-distribution data, \texttt{class\_weight='balanced'} causes the rare-class up-weighted decision paths to behave as the default fallback when the model is uncertain. \emph{Staff} was the rare class with the strongest mid-tier signal in Dutch training, so it dominates the Italian transfer.
+    \item \textbf{The Italian \texttt{temperature} column is all zero.} The Phase~1 helper \texttt{lib\_italy.py} zero-fills missing weather columns instead of preserving \texttt{NaN}. The cause classifier trained on real Dutch temperatures interprets a column of zeros as ``extreme winter conditions'', a pattern the model had learned to associate with non-default classes in training.
+    \item \textbf{Class-balance pathology under domain shift.} On out-of-distribution data, \texttt{class\_weight='balanced'} causes rare-class up-weighted decision paths to behave as the default fallback when the model is uncertain. \emph{Engineering work} is one such rare class with a distinctive mid-tier signal in the Dutch training set, so it dominates the Italian transfer.
 \end{enumerate}
 
-In v2 the staff share collapses to \SI{10.2}{\percent}, but the mode collapse moves to \emph{engineering work} at \SI{54.8}{\percent}. Within the Netherlands, \emph{engineering work} reaches F1$=$\num{0.000} on the test set; the Italian prediction is therefore another transfer artefact rather than real signal. We assign Italy a trust score of \textbf{1/10 (v1) $\to$ 3/10 (v2)}: better, but not yet operationally usable.
+We assign Italy a trust score of \textbf{3/10}: the model is consistent and confident, but on the wrong class.
 
-\subsection{Finland: from logistical pathology to a domain-plausible distribution}
+\subsection{Finland: domain-plausible distribution, but \emph{weather} is still missed}
 
-In v1 Finland is dominated by \emph{rolling stock} at \SI{65.9}{\percent} and \emph{logistical} at \SI{30.4}{\percent}. \emph{Logistical} is the third-rarest class in the Dutch training prior; this is the same class-balance pathology as the Italian case.
+The Finnish distribution flattens substantially: \emph{infrastructure} \SI{30.2}{\percent}, \emph{external} \SI{30.0}{\percent}, \emph{engineering work} \SI{18.5}{\percent}, \emph{unknown} \SI{13.7}{\percent}. This profile is close to the published Finnish railway literature, which describes infrastructure failures (frozen points, signal icing) as a primary winter cause, with external interference (passers-by, animals on track) and operational scheduling issues following.
 
-In v2 the Finnish distribution flattens substantially: \emph{infrastructure} \SI{30.2}{\percent}, \emph{external} \SI{30.0}{\percent}, \emph{engineering work} \SI{18.5}{\percent}, \emph{unknown} \SI{13.7}{\percent}. This profile is much closer to the published Finnish railway literature, which describes infrastructure failures (frozen points, signal icing) as a primary winter cause, with external interference (passers-by, animals on track) and operational scheduling issues following.
+\paragraph{But weather is still missed.} Only \SI{0.1}{\percent} of Finnish disrupted stops are predicted as \emph{weather}, even though \SI{27}{\percent} of Finnish stops have \texttt{weather\_severity}~$\geq$~3 and the same model achieves F1$=$\num{0.509} on \emph{weather} \emph{within the Netherlands}. Even at the most extreme severity bucket -- severity~$=$~4 with median snow depth at least \SI{25}{cm}, roughly \num{277000} stops in our window -- only \SI{0.7}{\percent} are tagged weather.
 
-\paragraph{But weather is still missed.} Only \SI{0.1}{\percent} of Finnish disrupted stops are predicted as \emph{weather}, even though \SI{27}{\percent} of Finnish stops have \texttt{weather\_severity}~$\geq$~3 and the v2 model achieves F1$=$\num{0.509} on \emph{weather} \emph{within the Netherlands}. Even at the most extreme severity bucket -- severity~$=$~4 with median snow depth at least \SI{25}{cm}, roughly \num{277000} stops in our window -- only \SI{0.7}{\percent} are tagged weather.
-
-The root cause is a feature-scale mismatch. The Dutch \texttt{precipitation} column comes from Open-Meteo daily aggregates measured in millimetres per day. The Finnish \texttt{precipitation} column comes from FMI per-stop hourly observations measured in millimetres per hour. The two are on numerically incompatible scales. The threshold the model learned for ``precipitation $\Rightarrow$ weather cause'' on Dutch values does not fire on Finnish values, because Finnish per-hour numbers are systematically smaller. We assign Finland a trust score of \textbf{2/10 (v1) $\to$ 4/10 (v2)}.
-
-\subsection{Verification by independent agents}
-
-We launched two parallel review agents -- one assigned to Italy, one to Finland -- and asked each to audit the transfer against domain knowledge and feature-distribution analysis. Both agents independently converged on the same root causes: feature-scale covariate shift combined with the class-balance pathology that \texttt{class\_weight='balanced'} introduces on out-of-distribution data. The full reports are in \texttt{docs/CAUSE\_REVIEW.md} and \texttt{docs/CAUSE\_V2.md}.
+The root cause is a feature-scale mismatch. The Dutch \texttt{precipitation} column comes from Open-Meteo daily aggregates measured in millimetres per day. The Finnish \texttt{precipitation} column comes from FMI per-stop hourly observations measured in millimetres per hour. The two are on numerically incompatible scales. The threshold the model learned for ``precipitation $\Rightarrow$ weather cause'' on Dutch values does not fire on Finnish values, because the Finnish per-hour numbers are systematically smaller. We assign Finland a trust score of \textbf{4/10}: domain-plausible everywhere except weather, which is the one class Finland is most likely to need.
 
 \subsection{Recommended next steps}
 

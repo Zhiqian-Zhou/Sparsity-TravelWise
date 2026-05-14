@@ -5,11 +5,11 @@
 
 The Netherlands publishes a separate disruption-incident log that tags each event with a \texttt{cause\_group} drawn from nine mutually-exclusive classes: \emph{rolling stock, infrastructure, external, accidents, unknown, logistical, engineering work, staff, weather}. Italy and Finland do not publish equivalent labels. We construct a labelled Dutch dataset by joining each disrupted Dutch stop to the most-frequent \texttt{cause\_group} reported at the same station on the same date. The result contains \num{126810} labelled stops, which is \SI{32.2}{\percent} of all Dutch disrupted stops; the remainder are disrupted but unlabelled, an important caveat we return to in \cref{sec:discussion}.
 
-The class distribution is severely skewed (\cref{tab:cause-classes}). Rolling stock alone accounts for almost two in five labelled stops; weather, despite being operationally important, accounts for only one in ninety.
+The class distribution is severely skewed (\cref{tab:cause-classes}). Rolling stock alone accounts for almost two in five labelled stops; weather, despite being operationally important, accounts for only one in ninety. The skew motivates the design choices in the next subsection.
 
 \begin{table}[htbp]
     \centering
-    \caption{Class distribution in the Dutch labelled set, totalling \num{126810} stops. The two rare classes (\emph{weather}, \emph{engineering work}, \emph{staff}) collectively account for less than \SI{6.2}{\percent} of the data, which is what motivates the v2 sample-weighting strategy described below.}
+    \caption{Class distribution in the Dutch labelled set, totalling \num{126810} stops. The three rare classes (\emph{weather}, \emph{engineering work}, \emph{staff}) collectively account for less than \SI{6.2}{\percent} of the data.}
     \label{tab:cause-classes}
     \small
     \begin{tabular}{l S[table-format=5.0,group-separator={,}] S[table-format=2.1]}
@@ -29,91 +29,61 @@ The class distribution is severely skewed (\cref{tab:cause-classes}). Rolling st
     \end{tabular}
 \end{table}
 
-\subsection{The v1 baseline (five models)}
+\subsection{Design choices}
 
-We trained five multi-class classifiers on the same Phase~2 splits used for delay prediction (\num{84606} train, \num{22291} validation, \num{19913} test rows): logistic regression, LightGBM, XGBoost, random forest, and a sklearn MLP. The random forest with \texttt{class\_weight='balanced'} won validation macro-F1 (\num{0.187}). LightGBM and XGBoost recorded higher accuracy but lower macro-F1, because they were silently collapsing onto the majority class.
-
-The per-class breakdown of the v1 winner (\cref{tab:cause-v1-perclass}) shows the failure pattern. Two of the nine classes have F1$=$\num{0.000} -- the model never predicts them. When the truth is \emph{infrastructure} the model defaults to \emph{rolling stock} \SI{65}{\percent} of the time. When the truth is \emph{weather}, it never picks weather; instead it picks rolling stock \SI{73}{\percent} and logistical \SI{27}{\percent}.
-
-\begin{table}[htbp]
-    \centering
-    \caption{Per-class test F1 for the v1 winner (random forest). The two F1$=$\num{0.000} classes are never predicted: the model has learned to ignore them rather than risk a misclassification. The headline ``majority-class default'' on rolling stock masks this collapse if only macro-accuracy is reported.}
-    \label{tab:cause-v1-perclass}
-    \small
-    \begin{tabular}{l S[table-format=4.0,group-separator={,}] S[table-format=1.3] l}
-        \toprule
-        Class & {Support} & {v1 F1} & Comment \\
-        \midrule
-        rolling stock     & 7376 & 0.510 & majority-class default \\
-        staff             &  743 & 0.421 & distinctive temporal pattern \\
-        infrastructure    & 6536 & 0.203 & recall only \SI{13.5}{\percent} \\
-        external          & 2455 & 0.070 &  \\
-        accidents         & 1054 & 0.044 &  \\
-        unknown           &  922 & 0.037 &  \\
-        logistical        &  481 & 0.027 &  \\
-        \textbf{weather}  &  111 & {\bfseries 0.000} & never predicted \\
-        \textbf{engineering work} & 235 & {\bfseries 0.000} & never predicted \\
-        \bottomrule
-    \end{tabular}
-\end{table}
-
-\subsection{The v2 redesign}
-
-We targeted five specific failures of v1 with five matching changes.
+Five design choices target the failure modes the class skew induces -- collapse onto the majority class, complete silence on rare classes, and absent winter-weather signal.
 
 \begin{enumerate}
-    \item \textbf{Cause-specific feature engineering.} We added 23 features tied to known causal patterns: peak-hour flags, weekend / Monday / Friday flags, season indicators, log-transformed delay, severe-delay flags ($>$\,30 and $>$\,60 minutes), cascade indicators derived from \texttt{prev\_stop\_actual\_delay}, severe-weather flags (\texttt{weather\_severity}~$\geq$~3 and~$=$~4), a heavy-snow flag, and the interaction \texttt{winter\_x\_severe\_weather}. The interaction turned out to be the single most important addition (see results).
-    \item \textbf{Symmetric sample weighting.} v1 only used \texttt{class\_weight='balanced'} on the linear and random-forest models. v2 calls \texttt{sklearn.utils.class\_weight.compute\_sample\_weight('balanced', y\_train)} once and passes the result as \texttt{sample\_weight} to LightGBM, XGBoost, random forest and gradient boosting. The gradient-boosted models now also see rare classes as expensive to misclassify.
-    \item \textbf{Hyperparameter retuning.} The boosted models were retuned: 800 trees, deeper splits (\texttt{num\_leaves}~$=$~127, \texttt{max\_depth}~$=$~8 for XGBoost), and L1/L2 regularisation set to \num{0.1}.
-    \item \textbf{An additional base learner.} We added sklearn's gradient boosting as a fifth base model, picked for its slightly different bias profile from XGBoost and LightGBM.
+    \item \textbf{Cause-specific feature engineering.} 23 features tied to known causal patterns: peak-hour flags, weekend / Monday / Friday flags, season indicators, log-transformed delay, severe-delay flags ($>$\,30 and $>$\,60 minutes), cascade indicators derived from \texttt{prev\_stop\_actual\_delay}, severe-weather flags (\texttt{weather\_severity}~$\geq$~3 and~$=$~4), a heavy-snow flag, and the interaction \texttt{winter\_x\_severe\_weather}. The last is the single most important addition (see results).
+    \item \textbf{Symmetric sample weighting.} \texttt{sklearn.utils.class\_weight.compute\_sample\_weight('balanced', y\_train)} is computed once and passed as \texttt{sample\_weight} to LightGBM, XGBoost, random forest and gradient boosting. The boosted models therefore see rare classes as expensive to misclassify, not just the linear and forest models.
+    \item \textbf{Hyperparameter tuning for an imbalanced target.} The boosted models use 800 trees, deeper splits (\texttt{num\_leaves}~$=$~127, \texttt{max\_depth}~$=$~8 for XGBoost), and L1/L2 regularisation set to \num{0.1}.
+    \item \textbf{Five-base benchmark.} Logistic regression, LightGBM, XGBoost, random forest, and sklearn's gradient boosting are trained on the Phase~2 splits (\num{84606} train, \num{22291} validation, \num{19913} test rows). The gradient-boosted addition is included because its bias profile differs slightly from XGBoost and LightGBM.
     \item \textbf{A stacking ensemble.} A logistic-regression meta-learner is fitted on the validation-set probability outputs of all five base models.
 \end{enumerate}
 
-\subsection{v2 results}
+\subsection{Results}
 
-\Cref{tab:cause-v2} reports the full v2 benchmark. LightGBM is the v2 test winner with macro-F1 of \num{0.213}; the stacker leads on validation but overfits, dropping to \num{0.137} on test.
+\Cref{tab:cause-results} reports the benchmark. LightGBM is the test winner with macro-F1 of \num{0.213}; the stacker leads on validation but overfits, dropping to \num{0.137} on test -- a textbook example of why a separate held-out is necessary when a meta-learner is involved.
 
 \begin{table}[htbp]
     \centering
-    \caption{Cause-prediction v2 benchmark on the Dutch test set. LightGBM is the test winner; the stacker leads on validation but overfits and loses two-thirds of its lead on test, a textbook example of why a separate held-out is necessary when a meta-learner is involved.}
-    \label{tab:cause-v2}
+    \caption{Cause-prediction benchmark on the Dutch test set. LightGBM is the test winner; the stacker leads on validation but overfits and loses two-thirds of its lead on test.}
+    \label{tab:cause-results}
     \small
     \begin{tabular}{l S[table-format=1.3] S[table-format=1.3] S[table-format=1.3] S[table-format=1.3]}
         \toprule
         Model & {val acc} & {val F1} & {test acc} & {test F1} \\
         \midrule
-        \texttt{logreg\_v2} & 0.147 & 0.116 & 0.190 & 0.140 \\
-        \texttt{lgbm\_v2}   & 0.293 & 0.171 & 0.275 & {\bfseries 0.213} \\
-        \texttt{xgb\_v2}    & 0.309 & 0.181 & 0.283 & 0.152 \\
-        \texttt{rf\_v2}     & 0.364 & 0.164 & 0.371 & 0.143 \\
-        \texttt{gbm\_v2}    & 0.277 & 0.175 & 0.276 & 0.155 \\
-        \texttt{stack\_v2}  & {\bfseries 0.444} & {\bfseries 0.278} & 0.354 & 0.137 \\
+        \texttt{logreg}        & 0.147 & 0.116 & 0.190 & 0.140 \\
+        \texttt{lgbm}          & 0.293 & 0.171 & 0.275 & {\bfseries 0.213} \\
+        \texttt{xgb}           & 0.309 & 0.181 & 0.283 & 0.152 \\
+        \texttt{random forest} & 0.364 & 0.164 & 0.371 & 0.143 \\
+        \texttt{gbm}           & 0.277 & 0.175 & 0.276 & 0.155 \\
+        \texttt{stack}         & {\bfseries 0.444} & {\bfseries 0.278} & 0.354 & 0.137 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-The per-class comparison against v1 (\cref{tab:cause-perclass-comparison}) tells the more interesting story. The biggest single gain is the rare \emph{weather} class: from F1$=$\num{0.000} to F1$=$\num{0.509}, an effectively-infinite relative improvement, and the breakthrough is attributable to the single feature \texttt{winter\_x\_severe\_weather}. \emph{external} more than doubles, \emph{unknown} and \emph{logistical} roughly double. The cost is a \SI{17}{\percent} drop on the dominant \emph{rolling stock} class -- the right trade, because the v1 model was ``winning'' that class by predicting it as the default for everything.
+The per-class breakdown (\cref{tab:cause-perclass}) is the more interesting view. The rare \emph{weather} class reaches F1$=$\num{0.509}, attributable to the single \texttt{winter\_x\_severe\_weather} interaction feature: without it the model never predicts \emph{weather} at all. The class skew is also why the dominant \emph{rolling stock} class sits at F1$=$\num{0.425}: under symmetric sample weighting the model no longer uses it as a default-everything fallback, which costs precision on rolling stock but buys recall on the rare classes. \emph{Engineering work} remains unsolved -- with only 235 test examples and a temporal pattern that overlaps with \emph{logistical}, the current feature set cannot disambiguate the two.
 
 \begin{table}[htbp]
     \centering
-    \caption{Per-class test F1 -- v1 (random forest) versus v2 (LightGBM). The largest single gain is on \emph{weather}, from F1$=$\num{0.000} to F1$=$\num{0.509}, attributable to the \texttt{winter\_x\_severe\_weather} interaction feature. The drop on \emph{rolling stock} is the result of the model no longer using it as a default-everything class.}
-    \label{tab:cause-perclass-comparison}
+    \caption{Per-class test F1 for the winning LightGBM model. The rare \emph{weather} class is the headline: F1$=$\num{0.509}, attributable to the \texttt{winter\_x\_severe\_weather} interaction. \emph{Engineering work} is the one class the current feature set cannot resolve.}
+    \label{tab:cause-perclass}
     \small
-    \begin{tabular}{l S[table-format=4.0,group-separator={,}] S[table-format=1.3] S[table-format=1.3] l}
+    \begin{tabular}{l S[table-format=4.0,group-separator={,}] S[table-format=1.3] l}
         \toprule
-        Class & {Support} & {v1 F1} & {v2 F1} & {$\Delta$} \\
+        Class & {Support} & {F1} & Comment \\
         \midrule
-        \textbf{weather}    &  111 & 0.000 & {\bfseries 0.509} & $+\infty$ \\
-        external            & 2455 & 0.070 & 0.165 & $+136\,\%$ \\
-        unknown             &  922 & 0.037 & 0.073 & $+97\,\%$ \\
-        logistical          &  481 & 0.027 & 0.049 & $+81\,\%$ \\
-        accidents           & 1054 & 0.044 & 0.067 & $+52\,\%$ \\
-        infrastructure      & 6536 & 0.203 & 0.253 & $+25\,\%$ \\
-        rolling stock       & 7376 & 0.510 & 0.425 & $-17\,\%$ \\
-        staff               &  743 & 0.421 & 0.377 & $-10\,\%$ \\
-        engineering work    &  235 & 0.000 & 0.000 & --- \\
+        \textbf{weather}    &  111 & {\bfseries 0.509} & carried by \texttt{winter\_x\_severe\_weather} \\
+        rolling stock       & 7376 & 0.425 & no longer the default-everything class \\
+        staff               &  743 & 0.377 & distinctive temporal pattern \\
+        infrastructure      & 6536 & 0.253 &  \\
+        external            & 2455 & 0.165 &  \\
+        unknown             &  922 & 0.073 &  \\
+        accidents           & 1054 & 0.067 &  \\
+        logistical          &  481 & 0.049 &  \\
+        engineering work    &  235 & 0.000 & overlaps temporally with \emph{logistical} \\
         \bottomrule
     \end{tabular}
 \end{table}
-
-The headline number: best test macro-F1 moves from \num{0.146} (v1) to \num{0.213} (v2 LightGBM), a \SI{46}{\percent} relative improvement. The single largest contributor is the \texttt{winter\_x\_severe\_weather} interaction. \emph{Engineering work} remains unsolved -- with only 235 test examples and a temporal pattern that overlaps with \emph{logistical}, the current feature set cannot disambiguate the two.

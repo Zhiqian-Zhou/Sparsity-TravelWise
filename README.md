@@ -8,7 +8,7 @@ models, and SHAP explainability tied back to a Sparksee Knowledge Graph.
 
 ---
 
-## 1. Problem
+## 1. Problem (adapted)
 
 Operators across IT, FI and NL want to know — *before a train departs and
 again at every stop along its route* — which stops are likely to be late or
@@ -24,10 +24,7 @@ The data is messy and heterogeneous:
 | Netherlands | RDT services + tariff distance + disruptions log (~10.8 M stop rows) | one row per stop, `Service:` / `Stop:` colon-prefixed columns | none in raw — enriched via Open-Meteo Historical API | wide tariff matrix, three-way cancellation flag |
 | **Total** | | **~16.6 M stop rows** | | |
 
-A previous version of this project predicted disruption at
-**`(station × month)`** grain — too coarse to be operationally useful, and
-inflated by the ~94 % positive class rate at that aggregation level
-(see `prompt.md` §1 for the framing decision). The current pipeline operates
+The current pipeline operates
 at **`(service × station)`** grain — one prediction per scheduled stop on the
 timetable.
 

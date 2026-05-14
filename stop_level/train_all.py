@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 import argparse
 import json
+import random
 import sys
 import time
 from pathlib import Path
@@ -154,6 +155,22 @@ def main():
     else:
         models = args.model
     scenarios = ["A", "B"] if args.scenario == "both" else [args.scenario]
+
+    # Global RNG seeding for reproducibility — covers pandas hash ops, numpy
+    # samples, and (conditionally) the torch RNGs that the per-model seeds
+    # don't touch. torch is imported only when a torch-using model is queued,
+    # so tabular-only runs don't pay its startup cost — and don't crash on
+    # broken numpy/torch ABI envs they would never have hit otherwise.
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    if any(m in models for m in ("graphsage", "bilstm")):
+        try:
+            import torch
+            torch.manual_seed(args.seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(args.seed)
+        except ImportError:
+            pass
 
     rows: list[dict] = []
     for scenario in scenarios:

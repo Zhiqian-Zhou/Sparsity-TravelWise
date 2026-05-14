@@ -112,15 +112,23 @@ def load_and_explode(
     raw_dir: Path,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Read every matched_data_2024_*.csv file, parse `timeTableRows`,
+    Read every matched_data_<year>_*.csv file (year(s) derived from utils.DATE_*),
+    parse `timeTableRows`,
     explode to one row per stop, return:
         df         : flat DataFrame (one row per stop)
         parse_log  : per-file telemetry  (file, n_trains, n_stops,
                                           n_success, n_empty, n_error)
     """
-    files = sorted(glob.glob(str(raw_dir / "matched_data_2024_*.csv")))
+    # Years to ingest come from the global date window in utils.py, so swapping
+    # the pipeline to a 2025 run only requires updating DATE_START / DATE_END.
+    years = sorted({DATE_START.year, DATE_END.year})
+    files: list[str] = []
+    for y in years:
+        files.extend(sorted(glob.glob(str(raw_dir / f"matched_data_{y}_*.csv"))))
     if not files:
-        raise FileNotFoundError(f"No matched_data_2024_*.csv in {raw_dir}")
+        raise FileNotFoundError(
+            f"No matched_data_{{{','.join(map(str, years))}}}_*.csv in {raw_dir}"
+        )
 
     all_chunks: list[pd.DataFrame] = []
     parse_log: list[dict] = []

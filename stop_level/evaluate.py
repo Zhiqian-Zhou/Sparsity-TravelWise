@@ -32,6 +32,7 @@ from sklearn.metrics import (
     precision_score, recall_score, brier_score_loss,
 )
 from sklearn.calibration import calibration_curve
+from sklearn.isotonic import IsotonicRegression
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -53,15 +54,55 @@ COLORS = {"logreg": "#90A4AE", "lgbm": "#1E88E5", "xgb": "#FFA000",
 
 
 # ── Data loading ──────────────────────────────────────────────────────────────
-def load_preds() -> dict[tuple[str, str], pd.DataFrame]:
-    """Return {(model, scenario): preds_test.parquet}; skips missing combos."""
+def load_preds(split: str = "test") -> dict[tuple[str, str], pd.DataFrame]:
+    """Return {(model, scenario): preds_<split>.parquet}; skips missing combos."""
     out: dict[tuple[str, str], pd.DataFrame] = {}
     for model, scenario in product(MODELS, SCENARIOS):
-        p = ARTEFACT_DIR / model / scenario / "preds_test.parquet"
+        p = ARTEFACT_DIR / model / scenario / f"preds_{split}.parquet"
         if not p.exists():
             continue
         out[(model, scenario)] = pd.read_parquet(p)
     return out
+
+
+# ── Calibration hook ──────────────────────────────────────────────────────────
+ECE_THRESHOLD = 0.05  # README §8: isotonic hook activates when val ECE > 0.05
+
+
+def maybe_calibrate(
+    val_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict]:
+    """
+    If val ECE > ECE_THRESHOLD, fit IsotonicRegression on val and apply to
+    test probabilities. Returns (test_df_with_calibrated_probs, info_dict).
+
+    The returned df gets a new column `p_disrupted_calibrated` and the existing
+    `p_disrupted` is left untouched so downstream figures can compare both.
+    Re-thresholds `y_pred` against the same val-tuned threshold for fair
+    metric comparison.
+    """
+    y_val,  p_val  = val_df["y_stop"].values,  val_df["p_disrupted"].values
+    y_test, p_test = test_df["y_stop"].values, test_df["p_disrupted"].values
+    ece_val_raw  = _ece(y_val,  p_val)
+    ece_test_raw = _ece(y_test, p_test)
+    info: dict = {
+        "ece_val_raw":  ece_val_raw,
+        "ece_test_raw": ece_test_raw,
+        "applied":      False,
+    }
+    if ece_val_raw <= ECE_THRESHOLD or y_val.sum() in (0, len(y_val)):
+        return test_df, info
+
+    iso = IsotonicRegression(out_of_bounds="clip").fit(p_val, y_val)
+    p_test_cal = iso.predict(p_test).astype("float32")
+    test_df = test_df.copy()
+    test_df["p_disrupted_calibrated"] = p_test_cal
+    info.update({
+        "applied":              True,
+        "ece_test_calibrated":  _ece(y_test, p_test_cal),
+    })
+    return test_df, info
 
 
 # ── Metric primitives ─────────────────────────────────────────────────────────
@@ -271,11 +312,25 @@ def _cascading_respect(preds: dict) -> None:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
-    preds = load_preds()
+    preds = load_preds("test")
+    val_preds = load_preds("val")
     if not preds:
         log.error("No predictions found under %s. Run train_all.py first.", ARTEFACT_DIR)
         return
     log.info("Loaded predictions: %s", sorted(preds))
+
+    # Apply isotonic calibration where val ECE > ECE_THRESHOLD (README §8).
+    calibration_info: dict = {}
+    for key, df in list(preds.items()):
+        if key not in val_preds:
+            continue
+        df_cal, info = maybe_calibrate(val_preds[key], df)
+        preds[key] = df_cal
+        calibration_info[f"{key[0]}/{key[1]}"] = info
+        if info["applied"]:
+            log.info("[%s/%s] isotonic calibration applied: val_ECE %.3f → test_ECE %.3f → %.3f",
+                     key[0], key[1], info["ece_val_raw"],
+                     info["ece_test_raw"], info["ece_test_calibrated"])
 
     # Build the metric table
     rows = []
@@ -288,6 +343,7 @@ def main():
             "p_at_r":   _precision_at_recall(df),
             "by_country":     _by_group(df, "country"),
             "by_train_class": _by_group(df, "train_class_code"),
+            "calibration":    calibration_info.get(f"{model}/{scenario}", {}),
         }
         if "position_norm" in df.columns:
             df = df.copy()

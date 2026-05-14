@@ -4,10 +4,14 @@ stop_level/models/graphsage_model.py
 GraphSAGE on the static station graph + per-stop MLP head.
 
 Architecture:
-  1. Two SAGEConv layers over the station adjacency graph compute
+  1. Two SAGEConv layers over the station adjacency graph compute per-layer
      `[N_stations, H]` embeddings from static station features.
-  2. For each stop, look up the embedding of its station, concatenate with
+  2. A Jumping-Knowledge concatenation joins `h1` and `h2` into a single
+     `[N_stations, 2H]` station embedding.
+  3. For each stop, look up the embedding of its station, concatenate with
      the tabular per-stop features, feed an MLP head → P(disrupted).
+
+Optimizer: AdamW with cosine-annealing LR over `epochs` steps.
 
 `torch_geometric` is imported lazily so the module loads even when PyG isn't
 installed; calling `fit` then raises a clear ImportError.
@@ -113,8 +117,9 @@ class GraphSAGEStopModel(StopModel):
                 self.conv2 = SAGEConv(H, H, aggr="mean")
                 self.ln1   = nn.LayerNorm(H)
                 self.ln2   = nn.LayerNorm(H)
+                # Jumping-Knowledge concat doubles the per-station embedding width.
                 self.head  = nn.Sequential(
-                    nn.Linear(H + F_tab, head_H),
+                    nn.Linear(2 * H + F_tab, head_H),
                     nn.ReLU(), nn.Dropout(dropout),
                     nn.Linear(head_H, 1),
                 )
@@ -122,7 +127,7 @@ class GraphSAGEStopModel(StopModel):
             def station_embed(self, x, ei):
                 h1 = Fnn.relu(self.ln1(self.conv1(x, ei)))
                 h2 = Fnn.relu(self.ln2(self.conv2(h1, ei)))
-                return h2
+                return torch.cat([h1, h2], dim=-1)
 
             def forward(self, x, ei, station_idx, tab):
                 emb = self.station_embed(x, ei)
@@ -131,7 +136,8 @@ class GraphSAGEStopModel(StopModel):
                 return self.head(z).squeeze(-1)
 
         net = Net(F_static, len(self.tabular_cols), self.hidden, self.head_hidden, self.dropout).to(device)
-        opt = torch.optim.Adam(net.parameters(), lr=self.lr, weight_decay=1e-4)
+        opt   = torch.optim.AdamW(net.parameters(), lr=self.lr, weight_decay=1e-4)
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, self.epochs))
         spw = n_neg_pos_ratio(train_df["y_stop"].values)
         bce = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([spw], dtype=torch.float, device=device))
 
@@ -165,6 +171,8 @@ class GraphSAGEStopModel(StopModel):
                 nn.utils.clip_grad_norm_(net.parameters(), 1.0)
                 opt.step()
                 losses.append(loss.item())
+
+            sched.step()
 
             net.eval()
             with torch.no_grad():

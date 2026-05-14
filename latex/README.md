@@ -95,8 +95,8 @@ If you prefer no shell-escape, just remove the `--shell-escape` flag — the lis
 | 6 Evaluation | 4 | Headline metrics + 6 figures (incl. PR-ROC grid, calibration, breakdowns) |
 | 7 XAI | 4 | TreeSHAP global, beeswarm, lag ablation, scenario uplift, waterfalls |
 | 8 KG | 3 | Sparksee 5.2.3 schema, build stats, native-API bridge query in 7.7 ms |
-| 9 Cause prediction | 4 | NL labelled data + 5-model v1/v2 + per-class breakthrough |
-| 10 Transfer | 3 | IT + FI failure modes, agent reviews, fix path |
+| 9 Cause prediction | 3 | NL labelled data + 5-model benchmark + per-class breakdown |
+| 10 Transfer | 4 | IT + FI predicted distributions, failure-mode analysis, fix path |
 | 11 Discussion | 2 | Inflight uplift interpretation, limitations |
 | 12 Conclusion | 1 | Summary + future work |
 | Appendix | 4 | 14 additional figures + reproducibility statement |
