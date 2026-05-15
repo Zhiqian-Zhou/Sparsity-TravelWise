@@ -313,12 +313,11 @@ LEAKY_COLS_A = {  # banned in pre-departure
   y_stop, delay_min, delay_minutes, arrival_delay, departure_delay,
   is_disrupted, y_service, cancelled, max_delay_min, final_delay, _late,
   prev_stop_actual_delay, cum_actual_delay_so_far,
-  max_actual_delay_so_far, headway_to_train_ahead,
+  max_actual_delay_so_far,
 }
 LEAKY_COLS_B = LEAKY_COLS_A − {prev_stop_actual_delay,
                                cum_actual_delay_so_far,
-                               max_actual_delay_so_far,
-                               headway_to_train_ahead}
+                               max_actual_delay_so_far}
 ```
 
 Every lag join uses **strict `<`** — features at date *D* see only data from date *D − 1* and earlier. The strict-less-than property is unit-tested (`tests/test_lag_strict_lt.py`).

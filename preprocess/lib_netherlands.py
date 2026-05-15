@@ -136,12 +136,22 @@ def cancellation_breakdown(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# Reference window for "historical" station-level statistics. Computing
+# avg_historical_delay over the full Jan–Jun would bake val/test labels into a
+# station-static feature consumed by all models. Restricting to the first
+# month gives a leakage-free historical reference that's still representative.
+_HISTORICAL_REF_END = pd.Timestamp("2024-01-31")
+
+
 # ── Builders ───────────────────────────────────────────────────────────────────
 def build_nodes_station(
     df: pd.DataFrame,
     stations_master: pd.DataFrame,
 ) -> pd.DataFrame:
-    ops_nc = df[~df["cancelled"]].dropna(subset=["arrival_delay"])
+    # Use only the first month as the historical reference so val/test labels
+    # cannot leak into the station-static avg_historical_delay feature.
+    hist = df[df["date"] <= _HISTORICAL_REF_END]
+    ops_nc = hist[~hist["cancelled"]].dropna(subset=["arrival_delay"])
     delay_avg = (
         ops_nc.groupby("station_code", observed=True)["arrival_delay"]
               .mean().rename("avg_historical_delay")
@@ -190,9 +200,19 @@ def build_edges_stops_at(
     cols = ["service_id_raw", "station_code", "arrival_delay",
             "weather_severity", "temperature", "wind_speed",
             "precipitation", "snow_depth"]
-    for c in cols:
+    # Required base columns must already exist; if missing it's a real error.
+    for c in ["service_id_raw", "station_code", "arrival_delay"]:
         if c not in df.columns:
-            df[c] = 0.0
+            raise KeyError(f"Required column missing from NL services frame: {c}")
+    # Optional weather columns: missing → NaN (not 0; 0 is a valid measurement
+    # for temperature/wind/precip/snow and would silently inject fake data).
+    # `weather_severity` is an ordinal where 0 means "clear" → keep 0 as the
+    # honest default if missing.
+    if "weather_severity" not in df.columns:
+        df["weather_severity"] = 0
+    for c in ["temperature", "wind_speed", "precipitation", "snow_depth"]:
+        if c not in df.columns:
+            df[c] = np.nan
     tmp = df[cols].copy()
     tmp["service_id"]    = COUNTRY_PFX + tmp["service_id_raw"].astype(str)
     tmp["station_id"]    = tmp["station_code"].map(sid_map)

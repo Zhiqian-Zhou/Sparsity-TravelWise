@@ -9,7 +9,7 @@ After the country-specific Phase~1 preprocessing, every country's \texttt{proces
 
 \Cref{tab:feature-groups} groups the 37 pre-departure features (scenario~A) and the 40 inflight features (scenario~B) by what they measure. Scenario~B differs from scenario~A by exactly three additions, all of which describe the actual delays accumulated by the same train at \emph{prior} stops on the current run.
 
-\begin{table}[htbp]
+\begin{table}[H]
     \centering
     \caption{Per-stop feature groups. Scenario~A is the pre-departure setting: only information available before the train leaves the platform. Scenario~B adds the three inflight features that summarise actual delays at prior stops on the same run. The grouping reflects \emph{what each feature measures}, not the order in which it is computed.}
     \label{tab:feature-groups}
@@ -39,7 +39,7 @@ The pipeline rests on a single rule: at prediction time the feature vector $\mat
 
 \begin{enumerate}
     \item \textbf{Phase~1 retains \texttt{delay\_minutes} only as a label source.} The column is used to compute the disruption indicator and is then dropped before the parquet output is written. It never appears as a feature.
-    \item \textbf{Phase~2 keeps two explicit blocklists.} The set \texttt{LEAKY\_COLS\_A} contains 15 columns that would leak in the pre-departure setting; \texttt{LEAKY\_COLS\_B} contains 11 (it is \texttt{LEAKY\_COLS\_A} minus the three inflight whitelist features, plus \texttt{headway\_to\_train\_ahead}). Before the scaler is fit, the active feature list is asserted to be disjoint from the relevant blocklist.
+    \item \textbf{Phase~2 keeps two explicit blocklists.} The set \texttt{LEAKY\_COLS\_A} contains 14 columns that would leak in the pre-departure setting; \texttt{LEAKY\_COLS\_B} contains 11 (it is \texttt{LEAKY\_COLS\_A} minus the three inflight whitelist features). Before the scaler is fit, the active feature list is asserted to be disjoint from the relevant blocklist.
     \item \textbf{Lag features use strict inequality on the daily aggregation grid.} The feature \texttt{station\_lag1\_rate(D)} is computed from data on day $D-1$ and earlier only -- never $D$. A unit test feeds a known sequence and asserts that the day-of value is not visible. This is the easiest leakage class to introduce by accident, so we test it directly.
     \item \textbf{The temporal split is at day granularity.} Every stop of a given service belongs to a single day, so a service ID can never straddle the train, validation, or test partitions.
     \item \textbf{The scaler is fit on training rows only.} Validation and test rows are transformed but never re-fit; this prevents test-set statistics from quietly affecting the normalisation.
@@ -48,11 +48,11 @@ The pipeline rests on a single rule: at prediction time the feature vector $\mat
 
 \subsection{Splits}
 
-\Cref{tab:splits} summarises the temporal split. Train, validation and test are non-overlapping date windows, and \texttt{splits.assert\_no\_service\_overlap} enforces at runtime that no service ID appears in two partitions. The disruption rate drops from \SI{10.34}{\percent} on the four-month training window to \SI{7.85}{\percent}--\SI{7.88}{\percent} on the validation and test months, reflecting a milder spring weather regime.
+\Cref{tab:splits} summarises the temporal split. Train, validation and test are non-overlapping date windows, and \texttt{splits.assert\_no\_service\_overlap} enforces at runtime that no service ID appears in two partitions. The disruption rate drops from \SI{10.13}{\percent} on the four-month training window to \SI{8.64}{\percent}--\SI{8.66}{\percent} on the validation and test months, reflecting a milder spring weather regime.
 
-\begin{table}[htbp]
+\begin{table}[H]
     \centering
-    \caption{Temporal split sizes after Phase~2. ``Disrupted rate'' is the fraction of stops whose arrival is more than five minutes late or that are cancelled. The drop from \SI{10.34}{\percent} (winter training) to \SI{7.88}{\percent} (June test) reflects normal seasonal disruption -- it is not a per-class label drift.}
+    \caption{Temporal split sizes after Phase~2. ``Disrupted rate'' is the fraction of stops whose arrival is more than five minutes late or that are cancelled. The drop from \SI{10.13}{\percent} (winter training) to \SI{8.66}{\percent} (June test) reflects normal seasonal disruption -- it is not a per-class label drift.}
     \label{tab:splits}
     \small
     \begin{tabular}{l
@@ -62,9 +62,9 @@ The pipeline rests on a single rule: at prediction time the feature vector $\mat
         \toprule
         Split & {Rows} & {Disrupted rate (\%)} & Date window \\
         \midrule
-        Train      & 11915114 & 10.34 & 2024-01-01 -- 2024-04-30 \\
-        Validation &  2368484 &  7.85 & 2024-05-01 -- 2024-05-31 \\
-        Test       &  2303236 &  7.88 & 2024-06-01 -- 2024-06-30 \\
+        Train      & 11073233 & 10.13 & 2024-01-01 -- 2024-04-30 \\
+        Validation &  2820493 &  8.64 & 2024-05-01 -- 2024-05-31 \\
+        Test       &  2706443 &  8.66 & 2024-06-01 -- 2024-06-30 \\
         \bottomrule
     \end{tabular}
 \end{table}

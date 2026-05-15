@@ -1,9 +1,9 @@
 \section{Data sources}
 \label{sec:data}
 
-The pipeline ingests open data from three operators that, despite covering similar railway operations, expose almost nothing in common at the schema level. \Cref{tab:data-sources} summarises the row counts that each country contributes after Phase~1 preprocessing. The combined feature store covers \num{16586834} stop rows belonging to \num{1559006} services across \num{2399} stations.
+The pipeline ingests open data from three operators that, despite covering similar railway operations, expose almost nothing in common at the schema level. \Cref{tab:data-sources} summarises the row counts that each country contributes after Phase~1 preprocessing. The combined feature store covers \num{16600169} stop rows belonging to \num{1559006} services across \num{2398} stations.
 
-\begin{table}[htbp]
+\begin{table}[H]
     \centering
     \caption{Per-country data sources and scale after Phase~1. All windows are 2024-01-01 to 2024-06-30. Stops are individual (service, station) rows; services are scheduled runs; stations are unique node IDs after deduplication. Italy contributes proportionally fewer stops because its source feed is restricted to long-distance services.}
     \label{tab:data-sources}
@@ -16,11 +16,11 @@ The pipeline ingests open data from three operators that, despite covering simil
         \toprule
         Country & Source & {Stops} & {Services} & {Stations} \\
         \midrule
-        Italy        & Trenitalia operations CSV~\cite{trenitalia2025figshare}                       & 2678291  & 344924  & 1399 \\
+        Italy        & Trenitalia operations CSV~\cite{trenitalia2025figshare}                       & 2678291  & 344924  & 1397 \\
         Finland      & FI-TW Kaggle~\cite{borin2025fitw} (FMI weather)                                 & 3112754  & 35687   & 451 \\
-        Netherlands  & RDT~\cite{rdt2024opendata} + Open-Meteo~\cite{zippenfenig2023openmeteo}         & 10795789 & 1178395 & 549 \\
+        Netherlands  & RDT~\cite{rdt2024opendata} + Open-Meteo~\cite{zippenfenig2023openmeteo}         & 10809124 & 1178395 & 550 \\
         \midrule
-        \textbf{Total} & ---                                                                          & 16586834 & 1559006 & 2399 \\
+        \textbf{Total} & ---                                                                          & 16600169 & 1559006 & 2398 \\
         \bottomrule
     \end{tabularx}
 \end{table}
@@ -30,7 +30,7 @@ The pipeline ingests open data from three operators that, despite covering simil
 
 Italy ships four separate CSV files: train operations, station coordinates, station-to-station mileage, and fault reports. The operations file alone weighs \SI{412}{MB} and is read in chunks so that peak memory stays bounded. Two non-numeric tokens in the \texttt{delay\_minutes} column require special handling. \texttt{N} marks the first stop of a service, where no upstream delay is defined yet; \texttt{S} marks a cancellation. We replace both with \texttt{NaN} but keep the \texttt{S} mask as a separate cancellation flag, because losing the cancellation signal would destroy our ability to compute the disruption label downstream. \Cref{fig:italy-step1-2} shows the chunked load profile (a) and the resulting share of the two sentinel tokens (b); the \SI{12}{\percent}--\SI{13}{\percent} share of \texttt{N} is consistent with one origin row per service.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \begin{subfigure}{0.48\textwidth}
         \centering
@@ -51,7 +51,7 @@ Italy ships four separate CSV files: train operations, station coordinates, stat
 
 The Finnish source -- the FI-TW Kaggle dataset~\cite{borin2025fitw} -- is the most syntactically painful. Each row holds one whole train, with all of its stops nested as a serialised Python literal in a \texttt{timeTableRows} cell. That literal includes bare \texttt{nan} tokens that \texttt{ast.literal\_eval} cannot parse, so the first preprocessing step is a regex pre-substitution before parsing. Each parsed stop carries an embedded \texttt{weather\_observations} dictionary supplied by FMI, where the keys are written-out English strings such as \texttt{Snow depth} and \texttt{Air temperature}. An earlier version of the codebase only mapped the camelCase forms (\texttt{snowDepth}, \texttt{airTemperature}) that FMI uses in its API responses; we extended the alias map to cover both spellings. \Cref{fig:finland-snow-severity} reports the resulting snow-depth distribution and the empirical disruption probability conditional on the derived weather-severity ordinal.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \begin{subfigure}{0.48\textwidth}
         \centering
@@ -70,6 +70,6 @@ The Finnish source -- the FI-TW Kaggle dataset~\cite{borin2025fitw} -- is the mo
 \subsection{Netherlands}
 \label{sec:data-netherlands}
 
-The Dutch source contributes \num{10795789} stop rows -- by far the largest of the three. Its raw RDT export uses colon-prefixed column names (\texttt{Service:Date}, \texttt{Stop:Arrival cancelled}) and a \emph{three-way} cancellation flag: a stop can be cancelled at arrival, at departure, or both, on top of an outer service-level \texttt{fully\_cancelled} flag. The cancellation indicator we feed downstream is the union of all four signals, computed with \texttt{any(axis=1)}.
+The Dutch source contributes \num{10809124} stop rows -- by far the largest of the three. Its raw RDT export uses colon-prefixed column names (\texttt{Service:Date}, \texttt{Stop:Arrival cancelled}) and a \emph{three-way} cancellation flag: a stop can be cancelled at arrival, at departure, or both, on top of an outer service-level \texttt{fully\_cancelled} flag. The cancellation indicator we feed downstream is the union of all four signals, computed with \texttt{any(axis=1)}.
 
-The RDT data does not include weather, so we built a small Open-Meteo Historical Archive client (\texttt{preprocess/weather\_enrichment\_nl.py}, around 160 lines) that fetches daily aggregates per station with \texttt{requests-cache}-backed caching. The first run hits the network for 591 stations, of which 213 return usable observations; subsequent runs read the cached parquet and require no network access. The fetched per-stop weather is then mapped onto the same 0--4 severity ordinal that Italy and Finland use.
+The RDT data does not include weather, so we built a small Open-Meteo Historical Archive client (\texttt{preprocess/weather\_enrichment\_nl.py}, around 160 lines) that fetches daily aggregates per station with \texttt{requests-cache}-backed caching. The first run hits the network for 591 stations, of which 205 return usable observations; subsequent runs read the cached parquet and require no network access. The fetched per-stop weather is then mapped onto the same 0--4 severity ordinal that Italy and Finland use.

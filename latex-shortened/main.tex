@@ -1,0 +1,30 @@
+% =============================================================================
+% main.tex — Sparsity-TravelWise, condensed 10-page manual.
+% Compile: pdflatex main && bibtex main && pdflatex main && pdflatex main
+% =============================================================================
+\documentclass[11pt,a4paper]{article}
+\input{preamble}
+
+\title{\bfseries Stop-Level Disruption Prediction for IT/FI/NL Railways:\\
+        \large A Ten-Page Manual to the Pipeline, Models, XAI and Knowledge Graph}
+\author{Anonymous Authors\\\small\href{https://github.com/Zhiqian-Zhou/Sparsity-TravelWise}{\texttt{github.com/Zhiqian-Zhou/Sparsity-TravelWise}}}
+\date{May 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\small
+We harmonise \num{16600169} stop rows from three open European railway feeds (Italy, Finland, Netherlands; Jan--Jun 2024) into a single anti-leakage Common Data Model with 37 (pre-departure) or 40 (inflight) features, and benchmark four model families twice on identical splits. The strongest pre-departure model (XGBoost) reaches test PR-AUC \num{0.527}; the inflight variant reaches \num{0.939}, with a lag-feature ablation showing the entire uplift is carried by lag and inflight features (collapse to PR-AUC \num{0.350} without them). On the Dutch labelled cause-of-disruption set the multi-class classifier reaches macro-F1 \num{0.213}, with the rare \emph{weather} class at F1$=$\num{0.509} thanks to a \texttt{winter\_x\_severe\_weather} interaction. A Sparksee 5.2.3 knowledge graph closes the loop from SHAP attribution to spatial-temporal context in \SI{7.7}{ms}. The full pipeline is reproducible from raw data with four shell commands and runs end-to-end in $\sim$1.5\,h on a multi-core host. This document is a manual: every load-bearing number, every model, every figure path is here.
+\end{abstract}
+
+\input{sections/01_overview.tex}
+\input{sections/02_data_features.tex}
+\input{sections/03_models_results.tex}
+\input{sections/04_xai.tex}
+\input{sections/05_kg_cause.tex}
+\input{sections/06_repro.tex}
+
+\bibliography{references}
+
+\end{document}

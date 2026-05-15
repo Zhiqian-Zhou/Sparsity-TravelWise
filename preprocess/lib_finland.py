@@ -57,15 +57,28 @@ ALIAS_MAP = {
     "trainStopping":           "train_stopping",
     "commercialStop":          "commercial_stop",
     "commercialTraffic":       "commercial_traffic",
+    # Weather alias entries handle BOTH variants of FI-TW releases:
+    # camelCase (older releases) and the Title-Case-with-spaces keys actually
+    # present inside `weather_observations` dicts in the current Kaggle
+    # release (verified empirically against matched_data_2024_01.csv).
     "airTemperature":          "air_temp",
+    "Air temperature":         "air_temp",
     "windSpeed":               "wind_speed",
+    "Wind speed":              "wind_speed",
     "windGust":                "wind_gust",
+    "Gust speed":              "wind_gust",
     "precipitation1h":         "precipitation_1h",
+    "Precipitation amount":    "precipitation_1h",
     "snowDepth":               "snow_depth",
+    "Snow depth":              "snow_depth",
     "cloudAmount":             "cloud_cover",
+    "Cloud amount":            "cloud_cover",
     "horizontalVisibility":    "visibility",
+    "Horizontal visibility":   "visibility",
     "dewPoint":                "dew_point",
+    "Dew-point temperature":   "dew_point",
     "relativeHumidity":        "humidity",
+    "Relative humidity":       "humidity",
 }
 
 
@@ -225,8 +238,20 @@ def filter_dates(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 
 
 # ── Imputation ─────────────────────────────────────────────────────────────────
+# Training window cutoff (matches stop_level/splits.py: train = Jan–Apr 2024).
+# Monthly medians are computed from this window only so val/test months don't
+# inform train-row imputation and vice versa.
+_IMPUTATION_TRAIN_END = pd.Timestamp("2024-04-30")
+
+
 def impute_weather(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """FI-TW imputation conventions; returns (df, log_df) for plotting."""
+    """FI-TW imputation conventions; returns (df, log_df) for plotting.
+
+    Median lookup tables are computed from rows with `departure_date <=
+    _IMPUTATION_TRAIN_END` so that test-month statistics never bake into
+    train-row features. Months outside the training window fall back to the
+    closest training month's median (or the global training median if none).
+    """
     log_rows: list[dict] = []
     for zero_col in ["precipitation_1h", "snow_depth"]:
         if zero_col in df.columns:
@@ -234,16 +259,20 @@ def impute_weather(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             df[zero_col] = df[zero_col].fillna(0.0)
             log_rows.append({"column": zero_col, "strategy": "zero_fill",
                              "n_imputed": n_nan})
+
+    train_mask = df["departure_date"] <= _IMPUTATION_TRAIN_END
     for med_col in ["air_temp", "visibility"]:
         if med_col in df.columns and df[med_col].isna().any():
-            month_num = df["departure_date"].dt.month
-            month_med = df.groupby(month_num)[med_col].transform("median")
-            global_med = df[med_col].median()
+            train_df = df[train_mask]
+            # Per-month median computed from training rows only.
+            train_month_med = train_df.groupby(train_df["departure_date"].dt.month)[med_col].median()
+            global_med_train = train_df[med_col].median()
+            month_lookup = df["departure_date"].dt.month.map(train_month_med)
             n_nan = int(df[med_col].isna().sum())
-            df[med_col] = df[med_col].fillna(month_med).fillna(global_med)
-            log_rows.append({"column": med_col, "strategy": "monthly_median",
+            df[med_col] = df[med_col].fillna(month_lookup).fillna(global_med_train)
+            log_rows.append({"column": med_col, "strategy": "monthly_median_train_only",
                              "n_imputed": n_nan,
-                             "global_median": float(global_med)})
+                             "global_median_train": float(global_med_train)})
     return df, pd.DataFrame(log_rows)
 
 

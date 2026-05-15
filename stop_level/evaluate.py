@@ -77,10 +77,10 @@ def maybe_calibrate(
     If val ECE > ECE_THRESHOLD, fit IsotonicRegression on val and apply to
     test probabilities. Returns (test_df_with_calibrated_probs, info_dict).
 
-    The returned df gets a new column `p_disrupted_calibrated` and the existing
-    `p_disrupted` is left untouched so downstream figures can compare both.
-    Re-thresholds `y_pred` against the same val-tuned threshold for fair
-    metric comparison.
+    When applied, OVERWRITES `p_disrupted` with calibrated values (preserving
+    the raw values under `p_disrupted_raw`) AND re-derives `y_pred` from a
+    fresh threshold tuned on the calibrated val probabilities. This way every
+    downstream metric/figure consumes the calibrated values automatically.
     """
     y_val,  p_val  = val_df["y_stop"].values,  val_df["p_disrupted"].values
     y_test, p_test = test_df["y_stop"].values, test_df["p_disrupted"].values
@@ -95,12 +95,23 @@ def maybe_calibrate(
         return test_df, info
 
     iso = IsotonicRegression(out_of_bounds="clip").fit(p_val, y_val)
+    p_val_cal  = iso.predict(p_val).astype("float32")
     p_test_cal = iso.predict(p_test).astype("float32")
+
+    # Re-tune the decision threshold on calibrated val probabilities so y_pred
+    # remains the F1-optimal binarisation under the new probability scale.
+    grid = np.linspace(0.05, 0.95, 19)
+    f1s = [f1_score(y_val, p_val_cal >= t, zero_division=0) for t in grid]
+    new_thr = float(grid[int(np.argmax(f1s))])
+
     test_df = test_df.copy()
-    test_df["p_disrupted_calibrated"] = p_test_cal
+    test_df["p_disrupted_raw"] = test_df["p_disrupted"].astype("float32")
+    test_df["p_disrupted"]     = p_test_cal
+    test_df["y_pred"]          = (p_test_cal >= new_thr).astype("int8")
     info.update({
         "applied":              True,
         "ece_test_calibrated":  _ece(y_test, p_test_cal),
+        "threshold_calibrated": new_thr,
     })
     return test_df, info
 
@@ -150,7 +161,15 @@ def _precision_at_recall(df: pd.DataFrame, target_recalls=(0.7, 0.8, 0.9, 0.95))
     out = {}
     for tgt in target_recalls:
         hit = r >= tgt
-        out[f"p@r{tgt:g}"] = float(p[hit].max()) if hit.any() else 0.0
+        if hit.any():
+            # Precision at the smallest recall ≥ target — i.e. the highest
+            # threshold whose recall still meets the target. `.max()` would
+            # walk the threshold all the way down and overstate precision.
+            r_hit = np.where(hit, r, np.inf)
+            idx = int(np.argmin(r_hit))
+            out[f"p@r{tgt:g}"] = float(p[idx])
+        else:
+            out[f"p@r{tgt:g}"] = 0.0
     return out
 
 
@@ -225,6 +244,9 @@ def _confusion_grid(preds: dict) -> None:
 
 
 def _calibration_grid(preds: dict) -> None:
+    """Reliability diagram. Reads the RAW probabilities (`p_disrupted_raw` if
+    isotonic was applied, else `p_disrupted`) so the curve shows the true
+    pre-calibration calibration of each model."""
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
     for i, scenario in enumerate(SCENARIOS):
         ax = axes[i]
@@ -232,7 +254,10 @@ def _calibration_grid(preds: dict) -> None:
         for (m, s), df in preds.items():
             if s != scenario:
                 continue
-            y, p = df["y_stop"].values, df["p_disrupted"].values
+            y = df["y_stop"].values
+            # Prefer raw probs for the diagnostic; fall back to current.
+            p_col = "p_disrupted_raw" if "p_disrupted_raw" in df.columns else "p_disrupted"
+            p = df[p_col].values
             if y.sum() in (0, len(y)):
                 continue
             p_true, p_pred = calibration_curve(y, p, n_bins=10, strategy="quantile")
@@ -279,25 +304,29 @@ def _grouped_bar(preds: dict, group_col: str, fname: str, title: str) -> None:
 def _cascading_respect(preds: dict) -> None:
     """
     Scenario B only. For each model, plot:
-        P(predicted disrupted | prev_stop_actual_delay > 5)   vs
-        P(predicted disrupted | prev_stop_actual_delay ≤ 5)
+        P(predicted disrupted | y_stop[k-1] = 1)   vs
+        P(predicted disrupted | y_stop[k-1] = 0)
     A meaningful gap demonstrates the model is using its inflight signal.
+
+    Conditions on the binary previous-stop label `y_stop`, not on the
+    continuous `delay_min` (which itself participates in label definition).
+    First stops per service are dropped because they have no `prev_y`.
     """
     rows = []
     for (m, s), df in preds.items():
         if s != "B":
             continue
-        if "delay_min" not in df.columns:
+        if "y_stop" not in df.columns:
             continue
-        # Reconstruct prev_stop_actual_delay quickly from delay_min within service.
         df = df.sort_values(["service_id", "stop_order"]).copy()
-        df["prev_delay"] = (
-            df.groupby("service_id")["delay_min"].shift(1).fillna(0).astype("float32")
-        )
-        late_prev = df["prev_delay"] > 5
+        df["prev_y"] = df.groupby("service_id")["y_stop"].shift(1)
+        df = df.dropna(subset=["prev_y"])  # drop first stops; do NOT bias to on-time
+        if df.empty:
+            continue
+        late_prev = df["prev_y"] == 1
         a = df.loc[ late_prev, "y_pred"].mean() if late_prev.any() else 0.0
         b = df.loc[~late_prev, "y_pred"].mean() if (~late_prev).any() else 0.0
-        rows.append({"model": m, "P_pred|prev_late": a, "P_pred|prev_ok": b})
+        rows.append({"model": m, "P_pred|prev_disrupted": a, "P_pred|prev_on_time": b})
     if not rows:
         return
     rdf = pd.DataFrame(rows).set_index("model")

@@ -1,0 +1,25 @@
+\section{Overview}
+\label{sec:overview}
+
+\paragraph{Problem.} For every scheduled stop of every passenger train in Italy, Finland and the Netherlands (Jan--Jun 2024; \num{16600169} stops, \num{1559006} services, \num{2398} stations) predict $P(\text{disrupted})$, where a stop is \emph{disrupted} if its arrival is more than five minutes late or it is cancelled. About \SI{8.66}{\percent} of test-month stops meet that criterion, so the operationally relevant baseline is the per-class precision-recall trade-off, not accuracy.
+
+\paragraph{Two operational scenarios.} Each model is trained twice on identical splits.
+\begin{itemize}
+    \item \textbf{Scenario A -- pre-departure.} 37 features. Available before the train leaves the platform: timetable, station-static, weather, lagged history. Use case: day-ahead planning and passenger alerts.
+    \item \textbf{Scenario B -- inflight.} 40 features. Adds three columns describing actual delays at \emph{prior} stops on the same run: \texttt{prev\_stop\_actual\_delay}, \texttt{cum\_actual\_delay\_so\_far}, \texttt{max\_actual\_delay\_so\_far}. Use case: live retiming and propagation forecast.
+\end{itemize}
+
+\paragraph{Pipeline phases.} Each phase owns its own artefacts; downstream phases need only the previous phase's outputs.
+
+\begin{enumerate}
+    \item Raw download (\texttt{scripts/download\_data.sh}) $\to$ \SI{5.7}{GB} on disk.
+    \item Per-country preprocessing (\texttt{preprocess/run\_all\_notebooks.sh}) $\to$ five standardised CSVs per country (\texttt{nodes\_station, nodes\_service, edges\_stops\_at, edges\_adjacent, nodes\_fault}).
+    \item Unified stop store (\texttt{stop\_level/preprocess\_stops.py}) $\to$ \texttt{Data/stops/*.parquet} + scaler + graph tensors + \texttt{feature\_names\_\{A,B\}.json} + \texttt{manifest\_stops.json}.
+    \item Model zoo (\texttt{stop\_level/train\_all.py --model logreg lgbm xgb graphsage --scenario both}) $\to$ per-(model, scenario) pickles + prediction parquets.
+    \item Evaluation (\texttt{stop\_level/evaluate.py}) $\to$ 8 figures + \texttt{benchmark\_stops.json}.
+    \item Explainability (\texttt{stop\_level/xai\_stops.py}) $\to$ 14 SHAP figures + \texttt{xai\_report\_stops.json} + lag-ablation refit.
+    \item Knowledge graph (\texttt{stop\_level/build\_kg.py}) $\to$ Sparksee~5.2.3 graph + bridge-query demo.
+    \item Cause classifier (\texttt{stop\_level/cause\_pred/run\_all.py}) $\to$ Dutch macro-F1 + cross-country transfer audit.
+\end{enumerate}
+
+\paragraph{Five contributions.} (i)~A unified anti-leakage feature store covering three operators (\cref{sec:data}). (ii)~A four-model benchmark trained twice (logreg, LightGBM~\cite{ke2017lightgbm}, XGBoost~\cite{chen2016xgboost}, GraphSAGE~\cite{hamilton2017inductive}) with the inflight uplift dominated by one feature (\cref{sec:models}). (iii)~TreeSHAP~\cite{lundberg2017unified,lundberg2020local} attributions plus a lag-feature ablation that decomposes the uplift cleanly (\cref{sec:xai}). (iv)~A Sparksee~\cite{sparksee2024} knowledge graph that takes a SHAP-flagged $(\texttt{service}, \texttt{station}, \texttt{date})$ triple and returns surrounding context in \SI{7.7}{ms} (\cref{sec:kgcause}). (v)~A multi-class cause-of-disruption classifier on Dutch labels reaching macro-F1 \num{0.213}, with documented cross-country transfer failure modes and recommended fixes (\cref{sec:kgcause}).

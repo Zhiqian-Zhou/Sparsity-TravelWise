@@ -194,6 +194,11 @@ class GraphSAGEStopModel(StopModel):
             net.load_state_dict(best_state)
         self.net = net.cpu()
 
+        # Cache edge_index BEFORE the in-fit predict_proba call below, otherwise
+        # predict_proba raises RuntimeError (the cache check at line ~215).
+        # This makes fit() self-contained and removes the need for fit_with_cache.
+        self._edge_index_cache = torch.tensor(ctx["edge_index"], dtype=torch.long)
+
         # Tune threshold on val
         y_val_prob = self.predict_proba(val_df)
         self.tune_threshold(val_df["y_stop"].values, y_val_prob)
@@ -225,11 +230,9 @@ class GraphSAGEStopModel(StopModel):
         return out
 
     def fit_with_cache(self, train_df, val_df, feat_cols, ctx=None, **kwargs):
-        """Fit + retain edge_index in memory for later predict_proba calls."""
-        out = self.fit(train_df, val_df, feat_cols, ctx=ctx, **kwargs)
-        torch, *_ = _require_pyg()
-        self._edge_index_cache = torch.tensor(ctx["edge_index"], dtype=torch.long)
-        return out
+        """Deprecated alias: `fit` now caches edge_index itself.
+        Kept for backwards compatibility with existing orchestrator branches."""
+        return self.fit(train_df, val_df, feat_cols, ctx=ctx, **kwargs)
 
     def save(self, dir_path: Path) -> None:
         torch, *_ = _require_pyg()

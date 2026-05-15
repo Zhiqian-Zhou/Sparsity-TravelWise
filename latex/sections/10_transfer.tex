@@ -9,7 +9,7 @@ The cause classifier is trained on Dutch labels because Italy and Finland do not
 
 \Cref{tab:transfer} reports the predicted cause distributions on Italian and Finnish disrupted stops. Mean confidence (the average predicted probability of the chosen class) is \num{0.600} on Italy and \num{0.369} on Finland. Confidence on Italy is high but for the wrong reasons: the model collapses onto \emph{engineering work}, a class on which it scores F1$=$\num{0.000} within the Netherlands.
 
-\begin{table}[htbp]
+\begin{table}[H]
     \centering
     \caption{Predicted cause distributions on disrupted stops in Italy and Finland from the Dutch-trained classifier (no fine-tuning). All shares within a column sum to \num{1.000}. The mean-confidence row reports the average predicted probability of the chosen class.}
     \label{tab:transfer}

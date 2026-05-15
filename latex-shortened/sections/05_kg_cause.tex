@@ -1,0 +1,51 @@
+\section{Knowledge graph and cause classifier}
+\label{sec:kgcause}
+
+\subsection{Knowledge graph}
+
+\paragraph{Why.} The four-model benchmark and the SHAP report deliver per-row probabilities and per-row attributions. Both are useful but neither answers \emph{why is this stop on the high-risk list?} That question requires graph-shaped context: the station's reliability history, recent fault reports, the immediate neighbours on the network. We therefore promote the Phase~1/2 outputs to a queryable graph database.
+
+\paragraph{Backend.} Sparksee~5.2.3~\cite{sparksee2024,martinez2017dex}, sourced from Maven Central as \texttt{com.sparsity:sparkseejava:5.2.3}. We drive its native Java API from Python via JPype1. A one-shell-command installer (\texttt{scripts/install\_sparksee.sh}) downloads the jar plus a portable Eclipse Temurin~17 JDK into a project-local \texttt{.tools/} directory; no system-level Java install is required. Built on a Tesla~T4 + 4-core CPU host.
+
+\paragraph{Schema.} Three node types and three edge types:
+\begin{itemize}
+    \item \textbf{Nodes}: \texttt{Station}(station\_id PK, country, lat, lon, avg\_historical\_delay, degree); \texttt{TrainService}(service\_id PK, country, train\_class\_code, date, is\_disrupted); \texttt{FaultEvent}(fault\_id PK, date, description).
+    \item \textbf{Edges}: \texttt{STOPS\_AT} (TrainService $\to$ Station, with delay\_minutes + weather\_*); \texttt{ADJACENT\_TO} (Station $\to$ Station, distance\_km); \texttt{REPORTED\_AT} (FaultEvent $\to$ Station).
+\end{itemize}
+
+\paragraph{Bridge query.} After the SHAP report flags a high-risk stop, the analyst plugs its $(\texttt{service\_id}, \texttt{station\_id}, \texttt{date})$ triple into the bridge query, which returns: this stop's actual delay and weather, recent fault events at this station ($\leq$~14 days), and the 1-hop adjacent stations. The native \texttt{Graph.findEdge} / \texttt{Graph.neighbors} implementation in \texttt{stop\_level/build\_kg.py::run\_bridge\_demo} answers in \SI{7.7}{ms} on the FI\_HKH hub subgraph -- responsive enough to drop into an interactive disruption-monitoring dashboard.
+
+\paragraph{Evaluation-mode cap.} The Maven Central jar runs Sparksee in \emph{personal evaluation} mode unless a licence string is provided in \texttt{sparksee.cfg}, capping each edge type at one million entries. The build script auto-falls back to a hub subgraph centred on FI\_HKH (\num{16434} TrainService, \num{98508} STOPS\_AT, \num{4} ADJACENT\_TO edges, \SI{11}{MB} on disk). Holders of a Sparksee licence can drop their string into \texttt{sparksee.cfg} and re-run with the same code path to load the full \num{16600169}-edge graph.
+
+\subsection{Cause classifier (Netherlands)}
+
+\paragraph{Labelled data.} The Netherlands publishes a separate disruption-incident log tagged with nine \texttt{cause\_group} classes (\emph{rolling stock, infrastructure, external, accidents, unknown, logistical, engineering work, staff, weather}). We join each disrupted Dutch stop to the most-frequent \texttt{cause\_group} reported at the same station on the same date, yielding \num{126810} labelled stops -- \SI{32.2}{\percent} of all Dutch disrupted stops. The class distribution is severely skewed: \emph{rolling stock} \SI{38.5}{\percent}; \emph{weather} \SI{1.1}{\percent}.
+
+\paragraph{Design choices.} (i)~23 cause-specific features: peak-hour / weekend / season flags, log-transformed delay, severe-delay flags ($>$\,30/60\,min), cascade indicators from \texttt{prev\_stop\_actual\_delay}, severe-weather flags (\texttt{weather\_severity} $\geq 3$ and $=4$), a heavy-snow flag, and the interaction \texttt{winter\_x\_severe\_weather}. (ii)~Symmetric \texttt{compute\_sample\_weight('balanced')} passed to all base models. (iii)~Boosted models use 800 trees, deeper splits and L1/L2 = \num{0.1}. (iv)~A logreg meta-stacker over five base models.
+
+\paragraph{Headline.} LightGBM is the test winner: macro-F1 $=\num{0.213}$. The stacker leads on validation but overfits to \num{0.137} on test -- a textbook example of why a separate held-out is needed when meta-learning is involved. The most striking single result is the rare \emph{weather} class at F1$=\num{0.509}$, attributable to the \texttt{winter\_x\_severe\_weather} interaction; without it the model never predicts \emph{weather} at all.
+
+\begin{table}[H]
+    \centering
+    \caption{Selected per-class test F1 for the winning LightGBM cause classifier on the Dutch test set (test rows: \num{19913}; macro-F1 \num{0.213}).}
+    \label{tab:cause}
+    \footnotesize
+    \begin{tabular}{l S[table-format=4.0,group-separator={,}] S[table-format=1.3] l}
+        \toprule
+        Class & {Support} & {F1} & Comment \\
+        \midrule
+        \textbf{weather}  &  111 & {\bfseries 0.509} & carried by \texttt{winter\_x\_severe\_weather} \\
+        rolling stock     & 7376 & 0.425 & no longer the default class \\
+        staff             &  743 & 0.377 & distinctive temporal pattern \\
+        infrastructure    & 6536 & 0.253 & \\
+        external          & 2455 & 0.165 & \\
+        engineering work  &  235 & 0.000 & overlaps temporally with \emph{logistical} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Cross-country transfer (no fine-tuning)}
+
+We apply the winning Dutch classifier to \num{340319} disrupted Italian stops and \num{865560} disrupted Finnish stops without retraining. \textbf{Italy} (mean confidence \num{0.600}, trust 3/10) collapses onto \emph{engineering work} (\SI{54.8}{\percent}) -- a class on which the model scores F1$=\num{0.000}$ within the Netherlands. Root cause: \texttt{lib\_italy.py:204} zero-fills missing weather columns, so the cause classifier interprets the all-zero \texttt{temperature} column as ``extreme winter conditions''. \textbf{Finland} (mean confidence \num{0.369}, trust 4/10) produces a domain-plausible distribution dominated by \emph{infrastructure} (\SI{30.2}{\percent}) and \emph{external} (\SI{30.0}{\percent}), consistent with published Finnish railway literature -- \textbf{but the \emph{weather} class is still missed}: only \SI{0.1}{\percent} of Finnish disrupted stops are tagged weather despite \SI{27}{\percent} having severity~$\geq 3$. Root cause: feature-scale mismatch -- Dutch \texttt{precipitation} is Open-Meteo daily mm/day, Finnish \texttt{precipitation} is FMI hourly mm/h, so the threshold the model learned on Dutch values does not fire on Finnish values.
+
+\paragraph{Recommended fixes (in expected-lift order).} (1)~Per-country mean-variance alignment of temperature and precipitation; (2)~fix the Italian zero-fill bug (one-line change); (3)~deterministic rule for the easy case (\texttt{weather\_severity} $\geq 3$ and \texttt{snow\_depth} $\geq 15$\,cm $\Rightarrow$ weather); (4)~hierarchical cause modelling; (5)~collect a small per-country labelled set (5--10\,K rows) and fine-tune.

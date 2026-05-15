@@ -30,23 +30,45 @@ class LogRegStopModel(StopModel):
         self.feat_cols = list(feat_cols)
         Xtr = train_df[self.feat_cols].astype("float32").values
         ytr = train_df["y_stop"].astype("int8").values
+        # sklearn LogisticRegression does not accept NaN. Some weather columns
+        # legitimately carry NaN where the source had no measurement (vs the
+        # fake-zero convention). Impute with the per-column median computed
+        # from training rows only — keeps the feature usable without leaking
+        # val/test stats. The imputer is persisted so predict-time inputs use
+        # the same medians.
+        self._col_medians = np.nanmedian(Xtr, axis=0).astype("float32")
+        # Replace any column whose median is itself NaN (all-NaN column) with 0.
+        self._col_medians = np.where(
+            np.isnan(self._col_medians), 0.0, self._col_medians
+        ).astype("float32")
+        Xtr = self._impute(Xtr)
         self.model = LogisticRegression(
             C=self.C, max_iter=self.max_iter,
             class_weight="balanced", solver="saga", n_jobs=-1,
             random_state=self.seed,
         )
-        # saga benefits from prior std-scaling, which we already applied via
-        # the scaler stored in Data/stops/. The values in train_df are scaled.
+        # Inputs are pre-scaled in preprocess_stops.py via StandardScaler fit
+        # on train rows only (mean/std persisted to Data/stops/scaler_*_B.npy).
         self.model.fit(Xtr, ytr)
         # Tune decision threshold on val
         y_val_prob = self.predict_proba(val_df)
         self.tune_threshold(val_df["y_stop"].values, y_val_prob)
         return self
 
+    def _impute(self, X: np.ndarray) -> np.ndarray:
+        mask = np.isnan(X)
+        if not mask.any():
+            return X
+        out = X.copy()
+        # Broadcast medians along rows then mask-substitute.
+        out[mask] = np.broadcast_to(self._col_medians, X.shape)[mask]
+        return out
+
     def predict_proba(self, df: pd.DataFrame) -> np.ndarray:
         if self.model is None:
             raise RuntimeError("LogRegStopModel.fit was not called.")
         X = df[self.feat_cols].astype("float32").values
+        X = self._impute(X)
         return self.model.predict_proba(X)[:, 1].astype("float32")
 
     def save(self, dir_path: Path) -> None:
@@ -56,7 +78,8 @@ class LogRegStopModel(StopModel):
             pickle.dump({"model": self.model,
                           "feat_cols": self.feat_cols,
                           "threshold": self.threshold_,
-                          "scenario": self.scenario}, f)
+                          "scenario": self.scenario,
+                          "col_medians": self._col_medians}, f)
 
     @classmethod
     def load(cls, dir_path: Path, scenario: str) -> "LogRegStopModel":
@@ -66,4 +89,5 @@ class LogRegStopModel(StopModel):
         m.model = blob["model"]
         m.feat_cols = blob["feat_cols"]
         m.threshold_ = blob["threshold"]
+        m._col_medians = blob.get("col_medians", np.zeros(len(m.feat_cols), dtype="float32"))
         return m

@@ -1,0 +1,72 @@
+\section{Explainability and lag-feature ablation}
+\label{sec:xai}
+
+\subsection{Setup}
+
+We pick the strongest tabular model per scenario by test PR-AUC -- XGBoost wins both -- and run TreeSHAP~\cite{lundberg2017unified,lundberg2020local} on a stratified \num{270644}-row sample (\SI{10}{\percent} of the test set, seed~42). The lag-feature ablation refits and predicts on the full training and test sets. The full Phase~4 pipeline (both scenarios + ablation + 14 figures + a JSON report) runs in roughly 24 minutes.
+
+\subsection{Top-5 SHAP features per scenario}
+
+\begin{table}[H]
+    \centering
+    \caption{Top-5 features by mean $|\text{SHAP}|$, XGBoost test sample. Scenario~A leans on (train, station) rolling reliability and station-static history; scenario~B is dominated by the previous stop's actual delay (\num{2.464}, $\sim$3.7$\times$ the next-strongest feature).}
+    \label{tab:shap-top5}
+    \footnotesize
+    \begin{tabular}{r l S[table-format=1.3] | l S[table-format=1.3]}
+        \toprule
+        \# & Scenario A feature & {mean $|\text{SHAP}|$} & Scenario B feature & {mean $|\text{SHAP}|$} \\
+        \midrule
+        1 & \texttt{train\_station\_lag7\_rate} & 1.061 & \texttt{prev\_stop\_actual\_delay}    & 2.464 \\
+        2 & \texttt{avg\_historical\_delay}     & 0.396 & \texttt{stop\_order}                  & 0.674 \\
+        3 & \texttt{stop\_order}                & 0.273 & \texttt{train\_station\_lag7\_rate}   & 0.375 \\
+        4 & \texttt{station\_lag7\_rate}        & 0.194 & \texttt{max\_actual\_delay\_so\_far}  & 0.363 \\
+        5 & \texttt{temperature}                & 0.165 & \texttt{avg\_historical\_delay}       & 0.297 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.78\textwidth]{xai/global_summary_bar_B.png}
+    \caption{Top-20 global feature importance, scenario~B (mean $|\text{SHAP}|$). \texttt{prev\_stop\_actual\_delay} dominates by a factor of $\sim$3.7 over \texttt{stop\_order}; the historical predictors stay in the top 10 with materially lower weight.}
+    \label{fig:shap-bar-B}
+\end{figure}
+
+\subsection{Lag-feature ablation}
+
+To quantify how much of the test-set signal lives in the lag and inflight feature groups, we re-fit the winning model after removing every \texttt{*\_lag*} feature \emph{and} the three inflight features simultaneously. The remaining feature set is purely static, weather and position. The two scenarios collapse to PR-AUC \num{0.350} (\cref{tab:lag-ablation}) -- so the entire A$\to$B uplift is carried by lag and inflight features.
+
+\begin{table}[H]
+    \centering
+    \caption{Lag-feature ablation. The marginal contribution of the three inflight features is +\num{0.412} test PR-AUC, almost all of it carried by \texttt{prev\_stop\_actual\_delay}.}
+    \label{tab:lag-ablation}
+    \footnotesize
+    \begin{tabular}{l S[table-format=1.3] S[table-format=1.3] S[table-format=1.3]}
+        \toprule
+        Scenario & {PR-AUC (full)} & {PR-AUC (no lag/inflight)} & {$\Delta$} \\
+        \midrule
+        A & 0.533 & 0.350 & 0.183 \\
+        B & 0.940 & 0.350 & 0.590 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.55\textwidth]{xai/lag_ablation.png}
+    \caption{Lag-feature ablation, scenario~B. Removing every lag feature and the three inflight features drops PR-AUC by \num{0.590} -- back to a static-features-only baseline.}
+    \label{fig:lag-ablation}
+\end{figure}
+
+\subsection{Scenario uplift}
+
+The per-row scenario uplift $\Delta P = P_B - P_A$ has \emph{mean} $-\num{0.128}$ on the test set (\cref{fig:uplift}). The negative sign is the right reading: scenario~A over-predicts using conservative lag/weather priors; scenario~B sees the actual prior-stop delay and revises \emph{downward} whenever that delay is small (the modal case). The effect strengthens late in the route ($-\num{0.153}$ for \texttt{position\_norm}~$\geq\num{0.75}$ vs.~$-\num{0.108}$ for \texttt{position\_norm}~$<\num{0.25}$) as B accumulates more inflight evidence.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.78\textwidth]{xai/scenario_uplift_map.png}
+    \caption{Per-row scenario uplift $P_B - P_A$ vs.\ \texttt{position\_norm}. Mean uplift $-\num{0.128}$; the negative sign means B is generally \emph{more} selective than A, and the effect strengthens late in the route.}
+    \label{fig:uplift}
+\end{figure}
+
+\paragraph{Take-away.} Lag features carry the +\num{0.183} A-uplift over a static baseline; the three inflight features carry an additional +\num{0.407} on top -- almost entirely via \texttt{prev\_stop\_actual\_delay}, which contributes up to $+\num{8.43}$ SHAP units on highest-confidence true positives. Within-run delay propagation is highly Markovian.

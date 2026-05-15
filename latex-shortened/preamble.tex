@@ -1,0 +1,61 @@
+% latex-shortened/preamble.tex
+% Lean preamble for the 10-page condensed manual.
+% Target: pdflatex on Overleaf free tier or local TeX Live, single pass < 10 s.
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+
+% Allow long teletype identifiers (e.g. \texttt{prev\_stop\_actual\_delay})
+% to break across lines without overfull boxes.
+\setlength{\emergencystretch}{2em}
+\hyphenpenalty=1000
+\tolerance=2000
+
+% Maths
+\usepackage{amsmath, amssymb}
+
+% Figures + sub-figures + [H] floats
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{caption}
+\captionsetup[figure]{font=small, labelfont=bf, justification=raggedright,
+                       singlelinecheck=false}
+\captionsetup[table]{font=small, labelfont=bf, justification=raggedright,
+                      singlelinecheck=false}
+
+% Tables
+\usepackage{booktabs}
+\usepackage{array, tabularx}
+\usepackage{siunitx}
+\sisetup{detect-weight=true, detect-family=true,
+          group-separator={,}, group-minimum-digits=4,
+          round-mode=places, round-precision=3}
+
+% Bibliography
+\usepackage[numbers, sort&compress, square]{natbib}
+\bibliographystyle{plainnat}
+
+% Hyperlinks (xcolor must precede so `blue!60!black` mixing works;
+% cleveref must come AFTER hyperref).
+\usepackage{xcolor}
+\usepackage[colorlinks=true,
+            linkcolor=blue!60!black,
+            citecolor=blue!60!black,
+            urlcolor=blue!60!black]{hyperref}
+\usepackage[capitalise, noabbrev]{cleveref}
+
+% Lists, paragraph spacing
+\usepackage{enumitem}
+\setlist{nosep, leftmargin=*}
+\usepackage{parskip}
+
+% Compact section headings to save vertical space.
+\usepackage{titlesec}
+\titlespacing*{\section}{0pt}{0.8\baselineskip}{0.3\baselineskip}
+\titlespacing*{\subsection}{0pt}{0.5\baselineskip}{0.2\baselineskip}
+
+% Graphics path: pull figures from the parent project rather than copy.
+% Paths are RELATIVE to latex-shortened/.
+\graphicspath{{../latex/figures/}{../stop_level/figures/}}

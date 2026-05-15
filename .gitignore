@@ -82,14 +82,32 @@ Data/Netherlands/_om_cache/
 # ── Notebooks executed by papermill ────────────────────────────────────────────
 preprocess/_executed/
 
-# ── LaTeX build artefacts ──────────────────────────────────────────────────────
-latex/*.aux
-latex/*.bbl
-latex/*.blg
-latex/*.log
-latex/*.out
-latex/*.toc
+# ── LaTeX build artefacts (covers both latex/ and any latex-shortened/) ───────
+**/*.aux
+**/*.bbl
+**/*.blg
+**/*.log
+**/*.out
+**/*.toc
+**/*.lof
+**/*.lot
+**/*.fls
+**/*.fdb_latexmk
+**/*.synctex.gz
+**/*.synctex(busy)
+**/*.dvi
+**/*.bcf
+**/*.run.xml
+**/*.nav
+**/*.snm
+**/*.vrb
+**/*-blx.bib
+**/*-blx.aux
+**/*.idx
+**/*.ind
+**/*.ilg
 latex/main.pdf
+latex-shortened/main.pdf
 
 # Override: allow inspection figures to be committed (referenced by docs/*.md and latex/*.tex)
 !preprocess/figures/

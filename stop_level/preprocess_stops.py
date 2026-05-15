@@ -69,6 +69,26 @@ def load_all_countries() -> dict[str, pd.DataFrame]:
             tables[key].append(df)
 
     merged = {k: pd.concat(v, ignore_index=True) for k, v in tables.items() if v}
+
+    # Defensive dedupe: nodes_station and nodes_service must have unique
+    # primary keys for downstream maps/joins to work. Duplicates appear in
+    # practice when a country's stations master file lists the same code
+    # twice with slightly different coords. Keep the first occurrence.
+    if "nodes_station" in merged:
+        before = len(merged["nodes_station"])
+        merged["nodes_station"] = merged["nodes_station"].drop_duplicates(
+            subset=["station_id"], keep="first"
+        ).reset_index(drop=True)
+        if len(merged["nodes_station"]) != before:
+            log.info("Deduped nodes_station: %d → %d", before, len(merged["nodes_station"]))
+    if "nodes_service" in merged:
+        before = len(merged["nodes_service"])
+        merged["nodes_service"] = merged["nodes_service"].drop_duplicates(
+            subset=["service_id"], keep="first"
+        ).reset_index(drop=True)
+        if len(merged["nodes_service"]) != before:
+            log.info("Deduped nodes_service: %d → %d", before, len(merged["nodes_service"]))
+
     log.info("Merged: %s", {k: v.shape for k, v in merged.items()})
     required = {"nodes_station", "nodes_service", "edges_stops_at", "edges_adjacent"}
     missing  = required - set(merged)
@@ -230,9 +250,6 @@ def main() -> None:
     # 1. Load + join at stop grain
     merged = load_all_countries()
     df = build_stop_grain(merged)
-    if args.sample > 0 and len(df) > args.sample:
-        df = df.sample(args.sample, random_state=args.seed).reset_index(drop=True)
-        log.info("Sampled to %d rows for dev run", len(df))
 
     # 2. Topology features
     station_ids = merged["nodes_station"]["station_id"].drop_duplicates().tolist()
@@ -240,8 +257,16 @@ def main() -> None:
     betweenness = compute_betweenness(merged["edges_adjacent"], station_ids)
     edge_index, edge_attr = build_graph_tensors(merged["edges_adjacent"], sid_to_idx)
 
-    # 3. Feature assembly
+    # 3. Feature assembly (lag/rate features need full daily activity → before sample)
     df = assemble_features(df, merged, betweenness)
+
+    # 3b. Optional dev-mode sampling — applied AFTER feature assembly so lag and
+    # rate features reflect true full-data daily activity. Sampling first would
+    # collapse station/train daily aggregates toward 0 and produce wildly wrong
+    # feature distributions, masking real bugs in models and metrics.
+    if args.sample > 0 and len(df) > args.sample:
+        df = df.sample(args.sample, random_state=args.seed).reset_index(drop=True)
+        log.info("Sampled to %d rows for dev run (post feature assembly)", len(df))
 
     # 4. Day-level split  (no service crosses splits — assertion below)
     splits_dict = {k: v.copy() for k, v in day_split(df).items()}
@@ -253,17 +278,36 @@ def main() -> None:
     all_cols = list(df.columns)
     feat_A = feature_columns(all_cols, "A")
     feat_B = feature_columns(all_cols, "B")
+    # Assert leakage-free BEFORE the numeric-dtype filter, otherwise a
+    # non-numeric leaker would be silently dropped by the filter instead of
+    # tripping the assertion (the guard's whole purpose).
+    assert_no_leakage(feat_A, "A")
+    assert_no_leakage(feat_B, "B")
     # Numeric only (gives a stable scaler input)
     train_df = splits_dict["train"]
     feat_A = [c for c in feat_A if pd.api.types.is_numeric_dtype(train_df[c])]
     feat_B = [c for c in feat_B if pd.api.types.is_numeric_dtype(train_df[c])]
-    assert_no_leakage(feat_A, "A")
-    assert_no_leakage(feat_B, "B")
 
     # 6. Fit scalers on TRAIN ONLY
     scaler_A = StandardScaler().fit(train_df[feat_A].astype("float32"))
     scaler_B = StandardScaler().fit(train_df[feat_B].astype("float32"))
     log.info("Scalers fit | feat_A=%d feat_B=%d", len(feat_A), len(feat_B))
+
+    # 6b. Apply scalers to all splits BEFORE persisting. By construction
+    # feat_A ⊂ feat_B (scenario B only adds inflight columns), so applying
+    # scaler_B covers every feature any model will read; the per-column
+    # mean/std for shared columns are identical between scaler_A and scaler_B
+    # because StandardScaler statistics are independent per column. Without
+    # this, the parquets contain raw unscaled values and logreg + bilstm +
+    # graphsage train on un-normalized inputs of mixed magnitude.
+    assert set(feat_A).issubset(set(feat_B)), (
+        f"feat_A must be a subset of feat_B; extra cols: {set(feat_A) - set(feat_B)}"
+    )
+    for name in ("train", "val", "test"):
+        d = splits_dict[name].copy()
+        d[feat_B] = scaler_B.transform(d[feat_B].astype("float32").values).astype("float32")
+        splits_dict[name] = d
+    log.info("Applied scaler_B to %d feature columns across all splits", len(feat_B))
 
     # 7. Persist
     service_ids = sorted(df["service_id"].unique().tolist())

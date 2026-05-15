@@ -1,0 +1,248 @@
+{
+  "scenarios": {
+    "A": {
+      "model": "xgb",
+      "scenario": "A",
+      "n_test_samples": 270644,
+      "feature_count": 37,
+      "base_value": 0.0004471870488487184,
+      "global_importance": {
+        "train_station_lag7_rate": 1.0606364011764526,
+        "avg_historical_delay": 0.39589187502861023,
+        "stop_order": 0.2728453576564789,
+        "station_lag7_rate": 0.19399100542068481,
+        "temperature": 0.16509969532489777,
+        "position_norm": 0.1564663201570511,
+        "cum_distance_km": 0.11738190799951553,
+        "degree": 0.08622962236404419,
+        "lat": 0.0846075713634491,
+        "station_lag1_avg_delay": 0.07138027995824814,
+        "scheduled_arrival_dow": 0.06550309807062149,
+        "is_origin": 0.06428525596857071,
+        "train_lag7_rate": 0.04859587550163269,
+        "n_total_stops": 0.040908101946115494,
+        "station_lag1_rate": 0.03819076716899872,
+        "lon": 0.03710425645112991,
+        "train_lag1_rate": 0.03693932667374611,
+        "service_route_distance_km": 0.035335760563611984,
+        "nbr_lag1_rate": 0.03222355246543884,
+        "train_class_code": 0.03035988099873066
+      },
+      "local_explanations": {
+        "tp": {
+          "row_index": 220302,
+          "service_id": "FI_25_2024-06-28",
+          "station_id": "FI_KNS",
+          "y_stop": 1,
+          "p_disrupted": 0.9918487071990967,
+          "top_drivers": {
+            "train_station_lag7_rate": 2.5848886966705322,
+            "avg_historical_delay": 0.6140278577804565,
+            "station_lag7_rate": 0.29079049825668335,
+            "degree": 0.1854928433895111,
+            "n_total_stops": 0.17878998816013336,
+            "stop_order": 0.15872478485107422,
+            "position_norm": 0.14404626190662384,
+            "train_lag7_rate": 0.1428721398115158
+          }
+        },
+        "fn": {
+          "row_index": 186241,
+          "service_id": "NL_13825750",
+          "station_id": "NL_KSWE",
+          "y_stop": 1,
+          "p_disrupted": 0.2545216679573059,
+          "top_drivers": {
+            "train_station_lag7_rate": -1.0057201385498047,
+            "station_lag7_rate": 0.31309425830841064,
+            "temperature": -0.191207155585289,
+            "avg_historical_delay": 0.17992189526557922,
+            "nbr_lag1_rate": -0.1732509881258011,
+            "degree": -0.10259678959846497,
+            "stop_order": 0.07128479331731796,
+            "train_lag7_rate": -0.0664602667093277
+          }
+        },
+        "fp": {
+          "row_index": 262661,
+          "service_id": "FI_23_2024-06-14",
+          "station_id": "FI_KML",
+          "y_stop": 0,
+          "p_disrupted": 0.9896903038024902,
+          "top_drivers": {
+            "train_station_lag7_rate": 2.5366718769073486,
+            "avg_historical_delay": 0.5759111642837524,
+            "station_lag7_rate": 0.2695384621620178,
+            "degree": 0.18256336450576782,
+            "n_total_stops": 0.1780574470758438,
+            "train_lag1_rate": 0.1718704253435135,
+            "position_norm": 0.16013392806053162,
+            "train_lag7_rate": 0.15345822274684906
+          }
+        },
+        "AB_flip": {
+          "row_index": 97299,
+          "service_id": "NL_13864756",
+          "station_id": "NL_ASSP",
+          "y_stop": 0,
+          "p_disrupted": 0.0006149664404802024,
+          "top_drivers": {
+            "stop_order": -1.9973300695419312,
+            "train_station_lag7_rate": -1.1338021755218506,
+            "position_norm": -0.92015141248703,
+            "is_origin": -0.45589393377304077,
+            "avg_historical_delay": -0.45552942156791687,
+            "n_total_stops": -0.3750388026237488,
+            "lat": -0.3403625786304474,
+            "lon": -0.2987987995147705
+          }
+        }
+      },
+      "winner_test_metrics": {
+        "pr_auc": 0.5274704836079748,
+        "roc_auc": 0.8978677842538174,
+        "f1": 0.5117162860489808,
+        "precision": 0.4729405800774885,
+        "recall": 0.5574181874050428,
+        "brier": 0.05532957393338926,
+        "ece": 0.0016857827678191217
+      }
+    },
+    "B": {
+      "model": "xgb",
+      "scenario": "B",
+      "n_test_samples": 270644,
+      "feature_count": 40,
+      "base_value": 0.018738364800810814,
+      "global_importance": {
+        "prev_stop_actual_delay": 2.464487314224243,
+        "stop_order": 0.6740550994873047,
+        "train_station_lag7_rate": 0.37516751885414124,
+        "max_actual_delay_so_far": 0.3629150688648224,
+        "avg_historical_delay": 0.29646265506744385,
+        "position_norm": 0.26900431513786316,
+        "lon": 0.17254044115543365,
+        "cum_distance_km": 0.16465988755226135,
+        "service_route_distance_km": 0.14100231230258942,
+        "station_lag1_avg_delay": 0.13186749815940857,
+        "lat": 0.13165289163589478,
+        "degree": 0.11283938586711884,
+        "betweenness_centrality": 0.1073448657989502,
+        "temperature": 0.09718356281518936,
+        "cum_actual_delay_so_far": 0.08952661603689194,
+        "n_total_stops": 0.08837062865495682,
+        "delta_wind_vs_prev_stop": 0.08628881722688675,
+        "station_lag7_rate": 0.06974674016237259,
+        "train_class_code": 0.0683201402425766,
+        "nbr_lag1_rate": 0.06750312447547913
+      },
+      "local_explanations": {
+        "tp": {
+          "row_index": 267964,
+          "service_id": "FI_24_2024-06-06",
+          "station_id": "FI_HKH",
+          "y_stop": 1,
+          "p_disrupted": 0.9999992847442627,
+          "top_drivers": {
+            "prev_stop_actual_delay": 8.344001770019531,
+            "betweenness_centrality": 0.9081329107284546,
+            "lon": 0.7513564229011536,
+            "max_actual_delay_so_far": 0.7238080501556396,
+            "avg_historical_delay": 0.5946369767189026,
+            "train_station_lag7_rate": 0.39711493253707886,
+            "cum_distance_km": 0.3232130706310272,
+            "cum_actual_delay_so_far": 0.28948211669921875
+          }
+        },
+        "fn": {
+          "row_index": 215345,
+          "service_id": "NL_13758264",
+          "station_id": "NL_UT",
+          "y_stop": 1,
+          "p_disrupted": 0.796362578868866,
+          "top_drivers": {
+            "prev_stop_actual_delay": -1.6504294872283936,
+            "train_station_lag7_rate": 1.4354989528656006,
+            "avg_historical_delay": -0.5637722611427307,
+            "train_class_code": 0.4977090656757355,
+            "degree": 0.3814903497695923,
+            "cum_distance_km": 0.33885812759399414,
+            "betweenness_centrality": 0.3165093660354614,
+            "service_route_distance_km": 0.2866704761981964
+          }
+        },
+        "fp": {
+          "row_index": 240798,
+          "service_id": "FI_1971_2024-06-15",
+          "station_id": "FI_RKI",
+          "y_stop": 0,
+          "p_disrupted": 0.9999158382415771,
+          "top_drivers": {
+            "prev_stop_actual_delay": 6.813748359680176,
+            "lon": 0.7587745785713196,
+            "max_actual_delay_so_far": 0.5690871477127075,
+            "stop_order": -0.3400767743587494,
+            "cum_distance_km": 0.3338049352169037,
+            "avg_historical_delay": 0.3284011483192444,
+            "n_total_stops": 0.3183104693889618,
+            "train_station_lag7_rate": 0.26683396100997925
+          }
+        },
+        "AB_flip": {
+          "row_index": 72209,
+          "service_id": "NL_13730277",
+          "station_id": "NL_LEER",
+          "y_stop": 0,
+          "p_disrupted": 3.2266481753140397e-07,
+          "top_drivers": {
+            "stop_order": -3.3198342323303223,
+            "prev_stop_actual_delay": -2.6641197204589844,
+            "position_norm": -1.498449444770813,
+            "avg_historical_delay": -1.3650853633880615,
+            "station_lag1_avg_delay": -0.7962397933006287,
+            "lon": -0.6930006742477417,
+            "lat": -0.6594443917274475,
+            "max_actual_delay_so_far": -0.5749265551567078
+          }
+        }
+      },
+      "winner_test_metrics": {
+        "pr_auc": 0.9388530893129168,
+        "roc_auc": 0.9859288181537982,
+        "f1": 0.882269674024812,
+        "precision": 0.9219423021462262,
+        "recall": 0.8458705338090442,
+        "brier": 0.015585790558649793,
+        "ece": 0.00037865126163643786
+      }
+    }
+  },
+  "lag_ablation": {
+    "A": {
+      "model": "xgb",
+      "scenario": "A",
+      "pr_auc_full": 0.5330162407495577,
+      "pr_auc_no_lag": 0.3503509847005814,
+      "delta": 0.18266525604897627,
+      "n_features_full": 37,
+      "n_features_no_lag": 30
+    },
+    "B": {
+      "model": "xgb",
+      "scenario": "B",
+      "pr_auc_full": 0.9398933078033692,
+      "pr_auc_no_lag": 0.3503509847005814,
+      "delta": 0.5895423231027879,
+      "n_features_full": 40,
+      "n_features_no_lag": 30
+    }
+  },
+  "scenario_uplift": {
+    "n_rows": 2706443,
+    "mean_uplift": -0.12829811871051788,
+    "uplift_pos25": -0.10813571512699127,
+    "uplift_pos75": -0.15257439017295837
+  },
+  "kg_bridge_query": "MATCH (svc:TrainService {service_id: $sid})-[:STOPS_AT]->(st:Station {station_id: $stid})\nOPTIONAL MATCH (f:FaultEvent)-[:REPORTED_AT]->(st)\n  WHERE f.date >= date($d) - duration({days: 14})\nOPTIONAL MATCH (st)-[:ADJACENT_TO]->(nbr:Station)\nRETURN st, collect(DISTINCT f) AS recent_faults, collect(DISTINCT nbr.station_id) AS neighbours",
+  "kg_bridge_note": "After a high-risk stop prediction, plug the (service_id, station_id, date) tuple into kg_bridge_query to retrieve the station's recent faults and neighbours from the Knowledge Graph."
+}

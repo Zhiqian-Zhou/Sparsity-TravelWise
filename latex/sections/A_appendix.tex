@@ -3,7 +3,7 @@
 
 \subsection{Per-country preprocessing diagnostics}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \begin{subfigure}{0.32\textwidth}
         \centering
@@ -24,7 +24,7 @@
     \label{fig:appendix-italy}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \begin{subfigure}{0.48\textwidth}
         \centering
@@ -42,7 +42,7 @@
 
 \subsection{Additional explainability figures}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \begin{subfigure}{0.48\textwidth}
         \centering
@@ -58,7 +58,7 @@
     \label{fig:appendix-waterfalls}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \begin{subfigure}{0.32\textwidth}
         \centering
@@ -79,7 +79,7 @@
     \label{fig:appendix-shap-by}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.92\textwidth]{stop_level/xai/shap_dependence_top5.png}
     \caption{SHAP dependence plots for the five strongest scenario-B features. Each panel plots feature value (x-axis) against SHAP value (y-axis); the colour encodes the value of the most-interacting secondary feature. The \texttt{prev\_stop\_actual\_delay} panel shows the cleanest monotonic relationship, with a knee around 5 minutes that matches our disruption threshold.}
@@ -88,7 +88,7 @@
 
 \subsection{Confusion matrices for all eight (model, scenario) combinations}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.92\textwidth]{stop_level/confusion_grid.png}
     \caption{Test-set confusion matrices for each of the four models in each of the two scenarios. The diagonal dominance in the scenario-B row visually reproduces the headline PR-AUC gap: tree-based scenario-B models recover almost every disrupted stop and rarely false-alarm.}
@@ -97,7 +97,7 @@
 
 \subsection{Reproducibility statement}
 
-The full pipeline is reproducible from a fresh checkout in three shell commands. Total wall-clock time on a 4-core CPU plus Tesla~T4 box is approximately 2.5 hours; the 30-test pytest suite runs in 25 seconds.
+The full pipeline is reproducible from a fresh checkout in three shell commands. Total wall-clock time on a multi-core CPU host is approximately 1.5 hours (Phase~1 18~min, Phase~2 17~min, Phase~3 30~min, Phase~4 24~min); the 30-test pytest suite (29 passing, 1 environment-skip) runs in roughly 20 seconds.
 
 \begin{verbatim}
 # Phase 0 -- install Python dependencies (one-time)
@@ -133,4 +133,4 @@ python stop_level/cause_prediction_v2.py     # cause classifier (Section 9)
 python -m pytest stop_level/tests/ -q
 \end{verbatim}
 
-\paragraph{Versions and seeds.} Every experiment in the paper uses fixed random seeds (42 for splits, 13 for model initialisation). Software versions are pinned in \texttt{scripts/install\_sparksee.sh} (JDK Temurin~17.0.19, Sparksee~5.2.3) and discoverable from the imports in each \texttt{stop\_level/*.py} script. Hardware: a single Tesla~T4 GPU, 4-core CPU, \SI{16}{GB} RAM.
+\paragraph{Versions and seeds.} Every experiment in the paper uses fixed random seeds (42 for splits, 13 for model initialisation, 42 for the SHAP subsample). Software versions are pinned in \texttt{scripts/install\_sparksee.sh} (JDK Temurin~17.0.19, Sparksee~5.2.3) and discoverable from the imports in each \texttt{stop\_level/*.py} script.

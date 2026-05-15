@@ -44,7 +44,6 @@ _OTHER_STOP_LEAK = {
     "prev_stop_actual_delay",
     "cum_actual_delay_so_far",
     "max_actual_delay_so_far",
-    "headway_to_train_ahead",
 }
 
 LEAKY_COLS_A: frozenset[str] = frozenset(_LABEL_AND_SAMESTOP | _OTHER_STOP_LEAK)

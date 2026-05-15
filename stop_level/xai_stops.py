@@ -385,8 +385,13 @@ def kg_query_template() -> str:
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-def run_for_scenario(scenario: str) -> dict:
+def run_for_scenario(scenario: str, sample_frac: float = 1.0, seed: int = 42) -> dict:
     test_df = pd.read_parquet(DATA_DIR / "stops_test.parquet").reset_index(drop=True)
+    if sample_frac < 1.0:
+        n_before = len(test_df)
+        test_df = test_df.sample(frac=sample_frac, random_state=seed).reset_index(drop=True)
+        log.info("Subsampled test set: %d → %d rows (frac=%.2f, seed=%d)",
+                 n_before, len(test_df), sample_frac, seed)
     name, winner_row = pick_winner(scenario)
     model_obj = load_winner_model(name, scenario)
     feat_cols = model_obj.feat_cols
@@ -416,14 +421,21 @@ def run_for_scenario(scenario: str) -> dict:
     fig_by_group(sv, test_df, feat_cols, "train_class_code",
                   "shap_by_train_class.png",    "Per-train-class |SHAP| top-6")
 
-    # Local waterfalls (4)
-    p_A_path = ARTEFACT_DIR / name / "A" / "preds_test.parquet"
-    p_B_path = ARTEFACT_DIR / name / "B" / "preds_test.parquet"
-    p_A = pd.read_parquet(p_A_path)["p_disrupted"].values if p_A_path.exists() else None
-    p_B = pd.read_parquet(p_B_path)["p_disrupted"].values if p_B_path.exists() else None
-    p_self = p_A if scenario == "A" else p_B
-    if p_self is None:
+    # Local waterfalls (4) — when sample_frac < 1.0 the cached preds_*.parquet
+    # rows don't align with our subsampled test_df, so we recompute on the
+    # subsample for index-correct local picks.
+    if sample_frac < 1.0:
         p_self = model_obj.predict_proba(test_df)
+        p_other = None  # AB-flip falls back to "argmax of |p - threshold|"
+        p_A, p_B = (p_self, p_other) if scenario == "A" else (p_other, p_self)
+    else:
+        p_A_path = ARTEFACT_DIR / name / "A" / "preds_test.parquet"
+        p_B_path = ARTEFACT_DIR / name / "B" / "preds_test.parquet"
+        p_A = pd.read_parquet(p_A_path)["p_disrupted"].values if p_A_path.exists() else None
+        p_B = pd.read_parquet(p_B_path)["p_disrupted"].values if p_B_path.exists() else None
+        p_self = p_A if scenario == "A" else p_B
+        if p_self is None:
+            p_self = model_obj.predict_proba(test_df)
     local_rows = pick_local_rows(test_df, p_self, p_B if scenario == "A" else p_A,
                                    model_obj.threshold_)
     waterfall_titles = {
@@ -474,6 +486,12 @@ def run_for_scenario(scenario: str) -> dict:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", choices=["A", "B", "both"], default="both")
+    parser.add_argument("--sample-frac", type=float, default=1.0,
+                        help="Fraction of test rows to use for SHAP (1.0 = all). "
+                             "Use a smaller value (e.g. 0.10) when full-data "
+                             "TreeSHAP is too slow on a wide gradient-boosted model.")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for the sample (default 42).")
     args = parser.parse_args()
 
     scenarios = ["A", "B"] if args.scenario == "both" else [args.scenario]
@@ -491,7 +509,9 @@ def main():
 
     for scenario in scenarios:
         try:
-            report["scenarios"][scenario] = run_for_scenario(scenario)
+            report["scenarios"][scenario] = run_for_scenario(
+                scenario, sample_frac=args.sample_frac, seed=args.seed
+            )
         except FileNotFoundError as e:
             log.error("Skipping scenario %s: %s", scenario, e)
             continue

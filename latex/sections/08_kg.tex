@@ -11,7 +11,7 @@ The chosen backend is Sparksee~5.2.3~\cite{sparksee2024,martinez2017dex}, source
 
 The schema uses three node types and three edge types. \Cref{lst:kg-schema} expresses it as Cypher DDL, the canonical portable description; the actual Sparksee build creates the same structure through the equivalent native API calls (\texttt{Graph.newNodeType}, \texttt{Graph.newEdgeType}, \texttt{Graph.newAttribute}).
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \begin{lstlisting}[language=Cypher]
 CREATE NODE TABLE Station(
     station_id            STRING,
@@ -43,9 +43,9 @@ CREATE REL TABLE REPORTED_AT(FROM FaultEvent TO Station);
 
 \subsection{Build statistics and the evaluation-mode cap}
 
-The Maven Central jar runs Sparksee in \emph{personal evaluation} mode unless a licence string is provided in \texttt{sparksee.cfg}. Evaluation mode caps each edge type at one million edges. The full \texttt{STOPS\_AT} relation contains \num{16586834} edges, well above that cap, so the build script automatically falls back to a representative \emph{hub subgraph} centred on the SHAP demo station \texttt{FI\_HKH}: every service that visits the hub or any of its 1-hop adjacent stations, together with the corresponding \texttt{STOPS\_AT}, \texttt{ADJACENT\_TO} and \texttt{REPORTED\_AT} edges. Holders of an academic or commercial Sparksee licence can drop their licence string into \texttt{sparksee.cfg} and re-run with the same code path to load the full \num{16.59}\,M-edge graph. \Cref{tab:kg-build} reports build wall-clock for the eval-mode hub subgraph on a Tesla~T4 / 4-core CPU box.
+The Maven Central jar runs Sparksee in \emph{personal evaluation} mode unless a licence string is provided in \texttt{sparksee.cfg}. Evaluation mode caps each edge type at one million edges. The full \texttt{STOPS\_AT} relation contains \num{16600169} edges, well above that cap, so the build script automatically falls back to a representative \emph{hub subgraph} centred on the SHAP demo station \texttt{FI\_HKH}: every service that visits the hub or any of its 1-hop adjacent stations, together with the corresponding \texttt{STOPS\_AT}, \texttt{ADJACENT\_TO} and \texttt{REPORTED\_AT} edges. Holders of an academic or commercial Sparksee licence can drop their licence string into \texttt{sparksee.cfg} and re-run with the same code path to load the full \num{16.60}\,M-edge graph. \Cref{tab:kg-build} reports build wall-clock for the eval-mode hub subgraph on a Tesla~T4 / 4-core CPU host.
 
-\begin{table}[htbp]
+\begin{table}[H]
     \centering
     \caption{Sparksee~5.2.3 build statistics for the FI\_HKH hub subgraph (Tesla~T4, 4-core CPU). Per-row inserts via JPype run at roughly 18\,K edges per second on the single-threaded native API. Sparksee's bulk \texttt{TypeLoader} is faster but is not reached here because the eval-mode cap binds first. ``Stage parquets'' shares its wall-clock with the parquet feature store, so it is amortised across the rest of the pipeline.}
     \label{tab:kg-build}
@@ -54,7 +54,7 @@ The Maven Central jar runs Sparksee in \emph{personal evaluation} mode unless a 
         \toprule
         Step & Wall-clock & {Rows} \\
         \midrule
-        Stage parquets (5 inputs concatenated and deduplicated) & $\sim$\SI{6}{min} & 16586834 \\
+        Stage parquets (5 inputs concatenated and deduplicated) & $\sim$\SI{6}{min} & 16600169 \\
         Hub-subgraph trim (\texttt{station\_id} $\in$ FI\_HKH $\cup$ neighbours) & \SI{3}{s} &  \\
         Schema creation (3 node + 3 edge types)        & \SI{0.1}{s} &  \\
         \texttt{Station}            & \SI{0.0}{s} & 3 \\
@@ -75,7 +75,7 @@ The on-disk \texttt{railway.gdb} file is \SI{11}{MB} for the hub subgraph, with 
 
 The point of the graph is to translate a black-box probability into a queryable spatial-temporal neighbourhood. After the SHAP report flags a high-risk stop, the analyst plugs $(\texttt{service\_id}, \texttt{station\_id}, \texttt{date})$ into the bridge query. \Cref{lst:kg-bridge} shows the canonical Cypher form (portable to Kuzu, Neo4j, or Sparksee~6+ OpenCypher); \texttt{stop\_level/build\_kg.py::run\_bridge\_demo} implements an exactly equivalent native-API translation against Sparksee~5.2.3 using \texttt{Graph.findEdge}, \texttt{Graph.explode} and \texttt{Graph.neighbors}.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \begin{lstlisting}[language=Cypher]
 MATCH (svc:TrainService {service_id: $sid})-[stop:STOPS_AT]->(st:Station {station_id: $stid})
 OPTIONAL MATCH (f:FaultEvent)-[:REPORTED_AT]->(st)
@@ -96,9 +96,9 @@ RETURN
 \label{lst:kg-bridge}
 \end{figure}
 
-\paragraph{Live demo.} For the highest-confidence true-positive disruption from the scenario-B XGBoost model -- service \texttt{FI\_28\_2024-06-30} stopping at \texttt{FI\_HKH} on \texttt{2024-06-30}, predicted with $p=1.000$ -- the native-API bridge query returns the result in \cref{lst:kg-result} in \SI{7.7}{ms}. The same query expressed as Cypher and executed by Kuzu's planner takes \SI{52}{ms}; Sparksee's direct \texttt{findEdge} call avoids the explode-and-filter pattern Cypher's planner falls back to.
+\paragraph{Live demo.} For a high-confidence true-positive disruption from the scenario-B XGBoost model -- service \texttt{FI\_28\_2024-06-30} stopping at \texttt{FI\_HKH} on \texttt{2024-06-30}, predicted with $p=1.000$ -- the native-API bridge query returns the result in \cref{lst:kg-result} in \SI{7.7}{ms}. The same query expressed as Cypher and executed by Kuzu's planner takes \SI{52}{ms}; Sparksee's direct \texttt{findEdge} call avoids the explode-and-filter pattern Cypher's planner falls back to.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \begin{lstlisting}
 {
   "station": "FI_HKH",       "country": "FI",
@@ -123,4 +123,4 @@ source scripts/install_sparksee.sh
 python stop_level/build_kg.py --rebuild
 \end{lstlisting}
 
-\paragraph{Licence tier.} The repository ships \texttt{sparksee.cfg.example} with cache and storage tuning but no licence string. Holders of an academic or commercial Sparksee licence can copy it to \texttt{sparksee.cfg} and add their \texttt{sparksee.license = ...} line; the build then loads the full \num{16586834}-edge graph through the same code path. Without a licence, the script auto-degrades to the FI\_HKH hub subgraph reported in \cref{tab:kg-build}, which is still enough to demonstrate the bridge query end to end.
+\paragraph{Licence tier.} The repository ships \texttt{sparksee.cfg.example} with cache and storage tuning but no licence string. Holders of an academic or commercial Sparksee licence can copy it to \texttt{sparksee.cfg} and add their \texttt{sparksee.license = ...} line; the build then loads the full \num{16600169}-edge graph through the same code path. Without a licence, the script auto-degrades to the FI\_HKH hub subgraph reported in \cref{tab:kg-build}, which is still enough to demonstrate the bridge query end to end.

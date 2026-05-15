@@ -7,7 +7,7 @@ The Netherlands publishes a separate disruption-incident log that tags each even
 
 The class distribution is severely skewed (\cref{tab:cause-classes}). Rolling stock alone accounts for almost two in five labelled stops; weather, despite being operationally important, accounts for only one in ninety. The skew motivates the design choices in the next subsection.
 
-\begin{table}[htbp]
+\begin{table}[H]
     \centering
     \caption{Class distribution in the Dutch labelled set, totalling \num{126810} stops. The three rare classes (\emph{weather}, \emph{engineering work}, \emph{staff}) collectively account for less than \SI{6.2}{\percent} of the data.}
     \label{tab:cause-classes}
@@ -45,7 +45,7 @@ Five design choices target the failure modes the class skew induces -- collapse 
 
 \Cref{tab:cause-results} reports the benchmark. LightGBM is the test winner with macro-F1 of \num{0.213}; the stacker leads on validation but overfits, dropping to \num{0.137} on test -- a textbook example of why a separate held-out is necessary when a meta-learner is involved.
 
-\begin{table}[htbp]
+\begin{table}[H]
     \centering
     \caption{Cause-prediction benchmark on the Dutch test set. LightGBM is the test winner; the stacker leads on validation but overfits and loses two-thirds of its lead on test.}
     \label{tab:cause-results}
@@ -66,7 +66,7 @@ Five design choices target the failure modes the class skew induces -- collapse 
 
 The per-class breakdown (\cref{tab:cause-perclass}) is the more interesting view. The rare \emph{weather} class reaches F1$=$\num{0.509}, attributable to the single \texttt{winter\_x\_severe\_weather} interaction feature: without it the model never predicts \emph{weather} at all. The class skew is also why the dominant \emph{rolling stock} class sits at F1$=$\num{0.425}: under symmetric sample weighting the model no longer uses it as a default-everything fallback, which costs precision on rolling stock but buys recall on the rare classes. \emph{Engineering work} remains unsolved -- with only 235 test examples and a temporal pattern that overlaps with \emph{logistical}, the current feature set cannot disambiguate the two.
 
-\begin{table}[htbp]
+\begin{table}[H]
     \centering
     \caption{Per-class test F1 for the winning LightGBM model. The rare \emph{weather} class is the headline: F1$=$\num{0.509}, attributable to the \texttt{winter\_x\_severe\_weather} interaction. \emph{Engineering work} is the one class the current feature set cannot resolve.}
     \label{tab:cause-perclass}

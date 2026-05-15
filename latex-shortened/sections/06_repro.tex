@@ -1,0 +1,43 @@
+\section{Reproduction, limitations, future work}
+\label{sec:repro}
+
+\subsection{Reproduction in four shell commands}
+
+\begin{verbatim}
+# 1. Raw data (~5.7 GB)        # 2. Per-country preprocessing (papermill)
+bash scripts/download_data.sh   bash preprocess/run_all_notebooks.sh
+
+# 3. Unified store + benchmark + evaluation + SHAP (one chained command)
+python stop_level/preprocess_stops.py
+python stop_level/train_all.py --model logreg lgbm xgb graphsage --scenario both \
+  && python stop_level/evaluate.py \
+  && python stop_level/xai_stops.py --scenario both --sample-frac 0.10
+
+# 4. (Optional) Sparksee KG (5.2.3 jar from Maven Central + Temurin 17)
+bash scripts/install_sparksee.sh && python stop_level/build_kg.py
+\end{verbatim}
+
+\paragraph{Tests.} \texttt{python -m pytest stop\_level/tests/ -q} $\to$ 30 total, 29 passing, 1 environment-skip (the \texttt{graphsage\_smoke} test when \texttt{torch\_geometric} is not installed). Suite executes in $\sim$20\,s.
+
+\paragraph{Wall-clock.} On a multi-core CPU host (GraphSAGE + KG on a Tesla~T4), end-to-end is $\sim$1.5\,h: Phase~1 (per-country preprocessing) 18\,min; Phase~2 (feature store) 17\,min; Phase~3 (model training) 30\,min; Phase~4 (SHAP + ablation, \SI{10}{\percent} sample) 24\,min; Sparksee KG 10\,min; cause classifier 20\,min.
+
+\paragraph{Artefact map.} After a full run the canonical consumables are: \texttt{Data/stops/stops\_\{train,val,test\}.parquet} (47 columns, scaled), \texttt{feature\_names\_\{A,B\}.json} (the contract), \texttt{scaler\_\{mean,scale\}\_\{A,B\}.npy} (inverse transform), \texttt{edge\_index.npy} + \texttt{edge\_attr.npy} (PyG-compatible station graph), \texttt{stop\_level/results/benchmark\_stops.json} (every metric table), \texttt{stop\_level/results/xai\_report\_stops.json} (SHAP global + 4 local explanations + lag-ablation + KG-bridge Cypher), and 22 figures under \texttt{stop\_level/figures/}.
+
+\subsection{Limitations}
+
+\begin{enumerate}
+    \item \textbf{Italian zero-fill weather bug.} \texttt{lib\_italy.py:204} zero-fills missing weather columns instead of preserving \texttt{NaN}. Downstream consequence: \emph{engineering work} mode collapse on the Italian cause-classifier transfer (\cref{sec:kgcause}). One-line fix.
+    \item \textbf{Sparksee evaluation-mode cap.} The Maven Central jar caps each edge type at one million entries unless a licence string is supplied; the build script auto-falls back to the FI\_HKH hub subgraph. Holders of a Sparksee licence load the full \num{16600169}-edge graph through the same code path.
+    \item \textbf{Cause label coverage.} Only \SI{32.2}{\percent} of Dutch disrupted stops have a matching incident-log entry, so the labelled set is a biased subsample of the disrupted population.
+    \item \textbf{Cross-country feature scales.} Open-Meteo daily aggregates and FMI hourly observations produce numerically different precipitation distributions, breaking the transfer of weather-related cause predictions to Finland.
+    \item \textbf{NL Open-Meteo coverage} is 205 of 551 stations -- cross-border stations have no Open-Meteo coordinates. Tree models handle the resulting \texttt{NaN} natively; logreg imputes via per-column train medians.
+    \item \textbf{Bidirectional LSTM deferred.} The architecture is sound at synthetic scale but the current packer materialises a $[\text{services}, \text{max\_stops}, F]$ tensor up front, which exceeds \SI{15}{GB} on the full Dutch data. A streaming, generator-based packer would solve this.
+\end{enumerate}
+
+\subsection{Future work}
+
+(i)~Streaming packer to bring the BiLSTM into the benchmark; (ii)~per-country mean-variance alignment of weather feature scales to fix the Finnish weather under-prediction; (iii)~a small Italian-specific cause label collection (5--10\,K rows) to break the NL$\to$IT transfer ceiling; (iv)~hierarchical cause modelling (\texttt{cause\_group} first, then sub-cause); (v)~loading the full \num{16600169}-edge graph in Sparksee under licence, demonstrating the same code path scales without modification; (vi)~refresh \texttt{avg\_historical\_delay} from a strictly-past rolling window in production.
+
+\subsection{Closing summary}
+
+The unified pipeline harmonises three open European railway feeds at \num{16600169}-stop scale with a single anti-leakage Common Data Model. Four model families benchmarked twice show that XGBoost wins both scenarios: PR-AUC \num{0.527} pre-departure, \num{0.939} inflight. The lag-feature ablation shows the entire uplift is carried by lag and inflight features; SHAP shows that within scenario~B almost the whole signal is one feature, \texttt{prev\_stop\_actual\_delay}. The Sparksee~5.2.3 knowledge graph closes the loop from per-row attribution to spatial-temporal context in \SI{7.7}{ms}. The Dutch cause classifier reaches macro-F1 \num{0.213} with the rare \emph{weather} class at F1$=\num{0.509}$; cross-country transfer is documented to fail along two specific axes for which the recommended fixes are concrete and small. Reproducible from raw open data with four shell commands; 29/30 tests pass.

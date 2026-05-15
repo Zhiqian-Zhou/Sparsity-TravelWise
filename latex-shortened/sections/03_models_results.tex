@@ -1,0 +1,71 @@
+\section{Models and headline results}
+\label{sec:models}
+
+\subsection{Model zoo}
+
+Four families, each trained twice on identical splits with identical class-imbalance handling:
+\begin{itemize}
+    \item \textbf{Logistic regression}~\cite{pedregosa2011scikit} -- balanced \texttt{class\_weight}, SAGA, max 2000 iters. Strict linear baseline.
+    \item \textbf{LightGBM}~\cite{ke2017lightgbm} -- 1500 trees, 63 leaves, depth 7, \texttt{scale\_pos\_weight} = train neg/pos, early stop on val PR-AUC.
+    \item \textbf{XGBoost}~\cite{chen2016xgboost} -- 1500 trees, \texttt{tree\_method='hist'}, \texttt{eval\_metric='aucpr'}, early stop after 50 stagnant rounds.
+    \item \textbf{GraphSAGE}~\cite{hamilton2017inductive} -- two SAGEConv layers (mean aggr) + LayerNorm + Jumping-Knowledge concat over a station graph of \num{2398} nodes / \num{163902} directed edges, MLP head, AdamW + cosine LR. PyTorch~\cite{paszke2019pytorch} + PyTorch Geometric~\cite{fey2019fast}.
+\end{itemize}
+Tabular models train on a multi-core CPU host; GraphSAGE on a Tesla~T4. Each \texttt{StopModel} sweeps 19 thresholds in $[0.05,0.95]$ and persists the val-F1-optimal one. Isotonic calibration is applied per (model, scenario) when val ECE $> \num{0.05}$; the threshold is then refit on calibrated probabilities.
+
+\subsection{Test-set headline metrics}
+
+\Cref{tab:headline} reports PR-AUC and F1 on the \num{2706443}-row June~2024 test set; the random-classifier PR-AUC baseline equals the prevalence (\num{0.087}). XGBoost wins both scenarios; the inflight uplift exceeds \num{0.4}~PR-AUC for every architecture.
+
+\begin{table}[H]
+    \centering
+    \caption{Test-set PR-AUC and F1. ``Uplift'' = PR-AUC$_B$ -- PR-AUC$_A$.}
+    \label{tab:headline}
+    \footnotesize
+    \begin{tabular}{l
+        S[table-format=1.3] S[table-format=1.3]
+        S[table-format=1.3] S[table-format=1.3]
+        S[table-format=1.3]}
+        \toprule
+        & \multicolumn{2}{c}{Scenario A (pre-departure)} & \multicolumn{2}{c}{Scenario B (inflight)} & \\
+        \cmidrule(lr){2-3}\cmidrule(lr){4-5}
+        Model & {PR-AUC} & {F1} & {PR-AUC} & {F1} & {Uplift} \\
+        \midrule
+        Logistic Regression  & 0.481 & 0.458 & 0.881 & 0.820 & 0.400 \\
+        LightGBM             & 0.503 & 0.506 & 0.934 & 0.877 & 0.431 \\
+        \textbf{XGBoost}     & {\bfseries 0.527} & {\bfseries 0.512} & {\bfseries 0.939} & {\bfseries 0.882} & 0.412 \\
+        GraphSAGE            & 0.520 & 0.518 & 0.921 & 0.891 & 0.401 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.78\textwidth]{stop_level/metrics_summary_B.png}
+    \caption{Per-model PR-AUC, F1, precision and recall on the test set under scenario~B. Tree- and graph-based models cluster above \num{0.92}; logreg saturates lower.}
+    \label{fig:metrics-summary}
+\end{figure}
+
+\paragraph{Calibration.} Post-isotonic test ECE is below \num{0.002} for all four tree models (LightGBM~A \num{0.001}, LightGBM~B \num{0.000}, XGBoost~A \num{0.002}, XGBoost~B \num{0.000}). Logistic regression scenario~A retains ECE \num{0.076}: a residual the linear model's lower information capacity cannot smooth out.
+
+\subsection{Per-country and cascading-respect breakdowns}
+
+\begin{table}[H]
+    \centering
+    \caption{XGBoost / scenario B, test PR-AUC and F1 by country. Finland advantage: short, recurrent runs whose \texttt{train\_station\_lag7\_rate} is highly predictive.}
+    \label{tab:per-country}
+    \footnotesize
+    \begin{tabular}{l S[table-format=7.0,group-separator={,}] S[table-format=1.3] S[table-format=1.3]}
+        \toprule
+        Country & {n\_test} & {PR-AUC} & {F1} \\
+        \midrule
+        Finland     &  495040 & 0.990 & 0.961 \\
+        Italy       &  421971 & 0.871 & 0.790 \\
+        Netherlands & 1789432 & 0.857 & 0.805 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\paragraph{Cascading respect (B/XGB).} Conditioning on the previous stop's actual disruption label,
+$P(\hat{y}=1 \mid y_{k-1}=1)=\num{0.938}$ versus $P(\hat{y}=1 \mid y_{k-1}=0)=\num{0.005}$, gap $=\num{0.933}$. The model uses the inflight signal aggressively and correctly.
+
+\paragraph{Operating points.} XGBoost~B is operationally usable as a high-precision triage signal: precision at recall \num{0.70} reaches \num{0.985}; at recall \num{0.95} it is still \num{0.548} (compared to \num{0.179} for XGBoost~A at the same recall). Performance is flat across route-position quartiles -- per-quartile PR-AUC stays in $[\num{0.935}, \num{0.954}]$.

@@ -3,15 +3,15 @@
 
 \subsection{What the inflight uplift really means}
 
-The most striking single number in the paper is the LightGBM scenario-A$\to$B PR-AUC jump from \num{0.520} to \num{0.951}. Reading it requires the lag-feature ablation in \cref{tab:lag-ablation}. Without lag and inflight features, both scenarios collapse to the same PR-AUC of \num{0.355} -- a static-features-only baseline, barely above the disruption rate. Since scenario~A retains lag features but no inflight features, and scenario~B retains both, the ablation decomposes the uplift cleanly:
+The most striking single number in the paper is the XGBoost scenario-A$\to$B PR-AUC jump from \num{0.527} to \num{0.939}. Reading it requires the lag-feature ablation in \cref{tab:lag-ablation}. Without lag and inflight features, both scenarios collapse to the same PR-AUC of \num{0.350} -- a static-features-only baseline, barely above the disruption rate. Since scenario~A retains lag features but no inflight features, and scenario~B retains both, the ablation decomposes the uplift cleanly:
 
 \begin{itemize}
-    \item Lag features alone (scenario~A): PR-AUC \num{0.520}.
-    \item Lag features plus three inflight features (scenario~B): PR-AUC \num{0.952}.
-    \item Neither (static, weather, position only): PR-AUC \num{0.355}.
+    \item Lag features alone (scenario~A): PR-AUC \num{0.533}.
+    \item Lag features plus three inflight features (scenario~B): PR-AUC \num{0.940}.
+    \item Neither (static, weather, position only): PR-AUC \num{0.350}.
 \end{itemize}
 
-The marginal contribution of the three inflight features is therefore $+\num{0.43}$ PR-AUC, almost all of it carried by \texttt{prev\_stop\_actual\_delay} per the SHAP analysis (\cref{fig:global-bar}). Operationally this confirms that within-run delay propagation is highly Markovian: the prior stop's actual delay is enough on its own to predict whether the next stop will be late.
+The marginal contribution of the three inflight features is therefore $+\num{0.412}$ PR-AUC, almost all of it carried by \texttt{prev\_stop\_actual\_delay} per the SHAP analysis (\cref{fig:global-bar}). Operationally this confirms that within-run delay propagation is highly Markovian: the prior stop's actual delay is enough on its own to predict whether the next stop will be late.
 
 \subsection{Within-Netherlands test versus cross-country transfer}
 
@@ -28,13 +28,13 @@ We document five concrete limitations.
 \begin{enumerate}
     \item \textbf{The bidirectional LSTM is deferred.} The architecture is sound at synthetic scale but the current packer materialises a $[\text{services}, \text{max\_stops}, F]$ tensor up front, which exceeds \SI{15}{GB} on the full Dutch data. A streaming, generator-based packer would solve this; we leave it for future work.
     \item \textbf{The Italian zero-fill weather bug.} \texttt{lib\_italy.py:204} zero-fills missing weather columns instead of preserving \texttt{NaN}. The downstream consequence is the \emph{engineering work} mode collapse on the Italian transfer (\cref{sec:transfer}). The fix is a single line; we report the bug here because its impact is larger than its size.
-    \item \textbf{Sparksee runs in evaluation mode.} The Sparksee~5.2.3 jar from Maven Central runs without a licence string, which caps each edge type at one million entries. The build script auto-falls back to the FI\_HKH hub subgraph; holders of an academic or commercial licence can drop a licence line into \texttt{sparksee.cfg} and load the full \num{16586834}-edge graph through the same code path.
+    \item \textbf{Sparksee runs in evaluation mode.} The Sparksee~5.2.3 jar from Maven Central runs without a licence string, which caps each edge type at one million entries. The build script auto-falls back to the FI\_HKH hub subgraph; holders of an academic or commercial licence can drop a licence line into \texttt{sparksee.cfg} and load the full \num{16600169}-edge graph through the same code path.
     \item \textbf{Cause label coverage is incomplete.} Only \SI{32.2}{\percent} of Dutch disrupted stops have a matching incident-log entry. The remaining stops are disrupted but unlabelled, so our ``labelled set'' is a biased subsample of the disrupted population.
     \item \textbf{Static cross-country feature scales.} Open-Meteo (daily aggregates) and FMI (hourly observations) produce numerically different precipitation distributions, breaking the transfer of weather-related cause predictions to Finland. Per-country alignment is the recommended fix (\cref{sec:transfer}).
 \end{enumerate}
 
 \subsection{Reproducibility}
 
-The full pipeline is reproducible from raw open data with three shell commands. Total wall-clock time on a 4-core CPU plus Tesla~T4 box is roughly 2.5 hours: Phase~1 (country preprocessing) takes 35 minutes, Phase~2 (feature store) 25 minutes, Phase~3 (model training) 35 minutes, Phase~4 (SHAP and ablations) 35 minutes, the Sparksee Knowledge Graph 10 minutes, and the cause-prediction run 20 minutes. The 30-test pytest suite executes in 25 seconds.
+The full pipeline is reproducible from raw open data with three shell commands. Total wall-clock time on a multi-core CPU host is roughly 1.5 hours: Phase~1 (country preprocessing) takes 18 minutes, Phase~2 (feature store) 17 minutes, Phase~3 (model training) 30 minutes, Phase~4 (SHAP and ablations) 24 minutes on a 10\% test sample, the Sparksee Knowledge Graph 10 minutes, and the cause-prediction run 20 minutes. The 30-test pytest suite (29 passing, 1 environment-skip) executes in roughly 20 seconds.
 
 All upstream data sources are public or publicly licensable: Trenitalia~\cite{trenitalia2025figshare} under CC-BY 4.0, FI-TW~\cite{borin2025fitw} under GPL-3 with a Kaggle account, RDT~\cite{rdt2024opendata} under CC-BY 4.0, and Open-Meteo~\cite{zippenfenig2023openmeteo} free of charge. Sparksee~5.2.3 is published on Maven Central as \texttt{com.sparsity:sparkseejava:5.2.3}; full graphs beyond one million edges per type require an academic or commercial licence from Sparsity Technologies.

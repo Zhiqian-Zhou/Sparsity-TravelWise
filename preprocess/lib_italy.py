@@ -51,24 +51,27 @@ def clean_delay_column(series: pd.Series) -> tuple[pd.Series, pd.Series]:
 
 
 WEATHER_SEVERITY_MAP: dict[str, int] = {
-    "cloudy":        0,
-    "light rain":    1,
-    "moderate rain": 2,
-    "heavy rain":    3,
-    "light snow":    2,
-    "moderate snow": 3,
-    "heavy snow":    4,
+    "sunny":            0,
+    "partially cloudy": 0,
+    "cloudy":           0,
+    "light rain":       1,
+    "moderate rain":    2,
+    "heavy rain":       3,
+    "light snow":       2,
+    "moderate snow":    3,
+    "heavy snow":       4,
 }
 
 
 def map_weather_severity(weather: pd.Series) -> pd.Series:
-    """Map free-text Italian weather strings to an int8 0-4 ordinal scale."""
-    return (
-        weather.astype(str).str.strip().str.lower()
-               .map(WEATHER_SEVERITY_MAP)
-               .fillna(0)
-               .astype("int8")
-    )
+    """Map free-text Trenitalia weather strings (English labels) to an int8 0-4 ordinal scale."""
+    s = weather.astype(str).str.strip().str.lower()
+    mapped = s.map(WEATHER_SEVERITY_MAP)
+    unknown = s[mapped.isna() & s.ne("nan")].value_counts()
+    if not unknown.empty:
+        log.warning("Unknown weather labels (defaulting to 0): %s",
+                    unknown.head(10).to_dict())
+    return mapped.fillna(0).astype("int8")
 
 
 # ── Streaming load with per-chunk telemetry for the notebook ──────────────────
@@ -134,8 +137,16 @@ def build_nodes_station(
     stations_master: pd.DataFrame,
     mileage: pd.DataFrame,
 ) -> pd.DataFrame:
-    """nodes_station.csv: station_id | lat | lon | avg_historical_delay | degree"""
-    ops_nc = ops[~ops["cancelled"]].dropna(subset=["arrival_delay"])
+    """nodes_station.csv: station_id | lat | lon | avg_historical_delay | degree
+
+    `avg_historical_delay` uses only the first month (Jan 2024) as a
+    leakage-free historical reference. Computing it over the full Jan–Jun
+    would bake val/test-month labels into a station-static feature consumed
+    by every model.
+    """
+    _HISTORICAL_REF_END = pd.Timestamp("2024-01-31")
+    hist = ops[ops["date"] <= _HISTORICAL_REF_END]
+    ops_nc = hist[~hist["cancelled"]].dropna(subset=["arrival_delay"])
     delay_avg = (
         ops_nc.groupby("station_name", observed=True)["arrival_delay"]
               .mean().rename("avg_historical_delay")
@@ -187,7 +198,11 @@ def build_nodes_service(ops: pd.DataFrame) -> pd.DataFrame:
            .apply(label_service, include_groups=False)
            .rename("is_disrupted").reset_index()
     )
-    labels["service_id"] = COUNTRY_PFX + labels["train_id"].astype(str)
+    # Date-encode service_id so the same train running on different days yields
+    # distinct services (matches FI/NL convention). Without this, Phase 2's
+    # stops×services merge explodes ~23x because every stop matches every day.
+    date_str = pd.to_datetime(labels["date"]).dt.strftime("%Y-%m-%d")
+    labels["service_id"] = COUNTRY_PFX + labels["train_id"].astype(str) + "_" + date_str
     labels["train_class_code"] = map_train_class(labels["train_class"])
     return labels[SCHEMA["nodes_service"]].copy()
 
@@ -197,15 +212,19 @@ def build_edges_stops_at(
     ops: pd.DataFrame,
     sid_map: dict[str, str],
 ) -> pd.DataFrame:
-    """edges_stops_at.csv with weather columns; Italy fills temp/wind/precip/snow with 0."""
+    """edges_stops_at.csv with weather columns; missing weather metrics → NaN (not 0)."""
     cols = ["train_id", "station_name", "arrival_delay", "weather_severity"]
     for c in ["temperature", "wind_speed", "precipitation", "snow_depth"]:
         if c not in ops.columns:
-            ops[c] = 0.0
+            ops[c] = np.nan
     cols.extend(["temperature", "wind_speed", "precipitation", "snow_depth"])
 
-    tmp = ops[cols].copy()
-    tmp["service_id"]    = COUNTRY_PFX + tmp["train_id"].astype(str)
+    tmp = ops[cols + ["date"]].copy()
+    # Date-encode service_id to match nodes_service (above). Without this the
+    # downstream Phase-2 merge between edges_stops_at and nodes_service
+    # row-explodes because train_id alone repeats across days.
+    date_str = pd.to_datetime(tmp["date"]).dt.strftime("%Y-%m-%d")
+    tmp["service_id"]    = COUNTRY_PFX + tmp["train_id"].astype(str) + "_" + date_str
     tmp["station_id"]    = tmp["station_name"].map(sid_map)
     tmp["delay_minutes"] = tmp["arrival_delay"].astype("float32")
     return tmp.dropna(subset=["station_id"])[SCHEMA["edges_stops_at"]]
@@ -242,11 +261,11 @@ def build_edges_adjacent(
 
 # ── nodes_fault ───────────────────────────────────────────────────────────────
 def build_nodes_fault(faults: pd.DataFrame) -> pd.DataFrame:
-    """fault_id | date | station_id | description (line-level → station_id NaN)."""
-    faults_f = faults[
-        (faults["date"] >= DATE_START) & (faults["date"] <= DATE_END)
-    ].copy()
-    faults_f["fault_id"] = COUNTRY_PFX + "FAULT_" + faults_f.index.astype(str)
-    faults_f["station_id"] = np.nan
-    faults_f["description"] = faults_f["delay_reason"].astype(str).str[:300]
-    return faults_f[SCHEMA["nodes_fault"]]
+    """Empty IT nodes_fault: source `Train_fault_information.csv` is line-level
+    (free-text route segments in `line` column), not station-level. There is
+    no usable per-station identifier, so emitting rows with `station_id = NaN`
+    would silently break `compute_fault_context` (drops on NaN station_id) and
+    `build_kg.REPORTED_AT` (filters by valid station_id). Honest empty frame
+    matches Finland's `build_nodes_fault_empty` convention."""
+    log.info("IT nodes_fault: emitting empty frame (source has no per-station identifier)")
+    return pd.DataFrame(columns=SCHEMA["nodes_fault"])

@@ -1,0 +1,89 @@
+\section{Data, features, anti-leakage}
+\label{sec:data}
+
+\subsection{Three feeds, one Common Data Model}
+
+The three operators share almost no schema. Italy publishes a flat per-stop CSV that encodes ``no upstream delay'' as the literal string \texttt{N} and ``cancelled'' as \texttt{S}. Finland publishes one row per train with every stop nested in a serialised Python literal carrying embedded FMI weather observations. The Netherlands publishes wide-tariff RDT exports with three separate cancellation flags and no built-in weather (we enrich it with Open-Meteo daily aggregates). After per-country preprocessing every country's \texttt{processed/} folder contains the same five tables (\texttt{nodes\_station, nodes\_service, edges\_stops\_at, edges\_adjacent, nodes\_fault}), which Phase~2 joins at the stop level.
+
+\begin{table}[H]
+    \centering
+    \caption{Per-country scale after Phase~1, Jan--Jun~2024.}
+    \label{tab:data-sources}
+    \footnotesize
+    \setlength{\tabcolsep}{6pt}
+    \begin{tabularx}{\textwidth}{l X
+        S[table-format=8.0,group-separator={,}]
+        S[table-format=7.0,group-separator={,}]
+        S[table-format=4.0,group-separator={,}]}
+        \toprule
+        Country & Source & {Stops} & {Services} & {Stations} \\
+        \midrule
+        Italy        & Trenitalia operations CSV~\cite{trenitalia2025figshare}                       &  2678291 &  344924 & 1397 \\
+        Finland      & FI-TW Kaggle~\cite{borin2025fitw} (FMI weather)                                 &  3112754 &   35687 &  451 \\
+        Netherlands  & RDT~\cite{rdt2024opendata} + Open-Meteo~\cite{zippenfenig2023openmeteo}        & 10809124 & 1178395 &  550 \\
+        \midrule
+        \textbf{Total} & ---                                                                          & 16600169 & 1559006 & 2398 \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\subsection{Per-stop features}
+
+\Cref{tab:feature-groups} groups the 37 pre-departure (A) features and the 40 inflight (B) features. B differs from A by exactly three additions, all describing actual delays at \emph{prior} stops on the same run.
+
+\begin{table}[H]
+    \centering
+    \caption{Per-stop feature groups. Scenario~B = scenario~A + the three inflight whitelist features.}
+    \label{tab:feature-groups}
+    \footnotesize
+    \setlength{\tabcolsep}{6pt}
+    \begin{tabularx}{\textwidth}{l X S[table-format=2.0]}
+        \toprule
+        Group & Features & {Count} \\
+        \midrule
+        Stop position        & \texttt{stop\_order, position\_norm, is\_origin, is\_terminus, n\_total\_stops, cum\_distance\_km, cum\_scheduled\_minutes} & 7 \\
+        Stop time            & \texttt{scheduled\_arrival\_hour, scheduled\_arrival\_dow, is\_holiday, month, month\_sin, month\_cos} & 6 \\
+        Station static       & \texttt{lat, lon, degree, betweenness\_centrality, avg\_historical\_delay} & 5 \\
+        Service identity     & \texttt{train\_class\_code, service\_n\_stops, service\_route\_distance\_km, service\_scheduled\_duration\_min} & 4 \\
+        Weather              & \texttt{weather\_severity, temperature, wind\_speed, precipitation, snow\_depth} & 5 \\
+        Weather differential & \texttt{delta\_severity\_vs\_prev\_stop, delta\_wind\_vs\_prev\_stop} & 2 \\
+        Lag (rolling history)& \texttt{station\_lag\{1,7\}\_rate, station\_lag1\_avg\_delay, train\_lag\{1,7\}\_rate, train\_station\_lag7\_rate, nbr\_lag1\_rate} & 7 \\
+        Fault context        & \texttt{station\_n\_active\_faults\_14d} & 1 \\
+        \midrule
+        \textbf{Inflight (B only)} & \texttt{prev\_stop\_actual\_delay, cum\_actual\_delay\_so\_far, max\_actual\_delay\_so\_far} & 3 \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\subsection{Anti-leakage protocol}
+
+The pipeline rests on one rule: at prediction time $\mathbf{x}$ may only contain information actually available before the prediction is made. Six layers enforce it.
+\begin{enumerate}
+    \item \textbf{\texttt{delay\_minutes} is dropped after label derivation} (Phase~1).
+    \item \textbf{Two explicit blocklists} (\texttt{LEAKY\_COLS\_A} = 14 cols, \texttt{LEAKY\_COLS\_B} = 11 cols); \texttt{assert\_no\_leakage} runs immediately before the scaler is fit. \texttt{feat\_B} $\setminus$ \texttt{feat\_A} = exactly the three-element inflight whitelist.
+    \item \textbf{Lag features use strict $<$.} \texttt{station\_lag1\_rate(D)} is computed from data on day $D-1$ and earlier only, asserted by \texttt{test\_lag\_strict\_lt.py}.
+    \item \textbf{Day-granularity temporal split.} A service belongs to a single day, so a service ID never straddles partitions; \texttt{test\_split\_no\_overlap.py} constructs an intentional overlap and asserts the error.
+    \item \textbf{Scaler is fit on training rows only;} val/test are transformed with the train statistics.
+    \item \textbf{Per-scenario feature lists persist as JSON} (\texttt{feature\_names\_\{A,B\}.json}); every consumer reads from them.
+\end{enumerate}
+
+\begin{table}[H]
+    \centering
+    \caption{Temporal split. Disrupted rate drops from \SI{10.13}{\percent} (winter train) to \SI{8.66}{\percent} (June test).}
+    \label{tab:splits}
+    \footnotesize
+    \begin{tabular}{l
+        S[table-format=8.0,group-separator={,}]
+        S[table-format=2.2]
+        l}
+        \toprule
+        Split & {Rows} & {Disrupted (\%)} & Date window \\
+        \midrule
+        Train      & 11073233 & 10.13 & 2024-01-01 -- 2024-04-30 \\
+        Validation &  2820493 &  8.64 & 2024-05-01 -- 2024-05-31 \\
+        Test       &  2706443 &  8.66 & 2024-06-01 -- 2024-06-30 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\paragraph{Empirical leakage audit.} The persisted parquets satisfy ten independent checks: blocklist intersection empty; service-disjointness across all \num{1559006} services; date-disjointness end-to-end; lag-rate values in $[0,1]$ with first-day all-zero; max same-row label correlation $|r|=\num{0.562}$ on \texttt{train\_station\_lag7\_rate}, with no feature exceeding \num{0.7}; isotonic-calibrated test ECE under \num{0.002} for all four tree models; cascading respect gap of \num{0.933} on scenario~B (\cref{sec:models}). Verdict: \textbf{green}; the A$\to$B uplift is real.

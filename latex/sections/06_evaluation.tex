@@ -3,9 +3,9 @@
 
 \subsection{Headline metrics}
 
-We evaluate all eight (model, scenario) combinations on the held-out \num{2303236}-row test set covering June~2024. The headline metric is precision-recall area under curve (PR-AUC); F1 at the tuned threshold is reported alongside. \Cref{tab:headline-metrics} lays out the eight numbers; \cref{fig:metrics-summary,fig:pr-roc} render them visually.
+We evaluate all eight (model, scenario) combinations on the held-out \num{2706443}-row test set covering June~2024. The headline metric is precision-recall area under curve (PR-AUC); F1 at the tuned threshold is reported alongside. \Cref{tab:headline-metrics} lays out the eight numbers; \cref{fig:metrics-summary,fig:pr-roc} render them visually.
 
-\begin{table}[htbp]
+\begin{table}[H]
     \centering
     \caption{Test-set PR-AUC and F1 for the eight (model, scenario) combinations. Higher is better in both columns. The right-most column reports the absolute PR-AUC gain when the same model moves from scenario~A (pre-departure) to scenario~B (inflight). XGBoost wins both scenarios; the inflight uplift is dominated by a single feature (see \cref{sec:xai}).}
     \label{tab:headline-metrics}
@@ -19,15 +19,15 @@ We evaluate all eight (model, scenario) combinations on the held-out \num{230323
         \cmidrule(lr){2-3}\cmidrule(lr){4-5}
         Model & {PR-AUC} & {F1} & {PR-AUC} & {F1} & {A$\to$B uplift} \\
         \midrule
-        Logistic Regression  & 0.280 & 0.352 & 0.541 & 0.546 & 0.261 \\
-        LightGBM             & 0.520 & 0.525 & 0.951 & 0.903 & 0.431 \\
-        \textbf{XGBoost}     & {\bfseries 0.552} & {\bfseries 0.530} & {\bfseries 0.952} & {\bfseries 0.906} & 0.400 \\
+        Logistic Regression  & 0.481 & 0.458 & 0.881 & 0.820 & 0.400 \\
+        LightGBM             & 0.503 & 0.506 & 0.934 & 0.877 & 0.431 \\
+        \textbf{XGBoost}     & {\bfseries 0.527} & {\bfseries 0.512} & {\bfseries 0.939} & {\bfseries 0.882} & 0.412 \\
         GraphSAGE            & 0.520 & 0.518 & 0.921 & 0.891 & 0.401 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \begin{subfigure}{0.48\textwidth}
         \centering
@@ -43,7 +43,7 @@ We evaluate all eight (model, scenario) combinations on the held-out \num{230323
     \label{fig:metrics-summary}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.92\textwidth]{stop_level/pr_roc_grid.png}
     \caption{ROC curves (left column) and precision-recall curves (right column) for all four models on each scenario. In scenario~B the precision-recall curves hug the top-right corner: the A$\to$B PR-AUC jump from roughly \num{0.52} to \num{0.95} is visible at a glance.}
@@ -52,9 +52,9 @@ We evaluate all eight (model, scenario) combinations on the held-out \num{230323
 
 \subsection{Calibration}
 
-A high PR-AUC is necessary but not sufficient: a downstream operations team will only use the predicted probabilities directly if those probabilities mean what they say. \Cref{fig:calibration} shows reliability diagrams for each (model, scenario) combination. LightGBM and XGBoost stay close to the perfect-calibration diagonal in scenario~B; logistic regression is the worst on both scenarios, with an Expected Calibration Error (ten-bin quantile) of \num{0.319} versus \num{0.043} for XGBoost.
+A high PR-AUC is necessary but not sufficient: a downstream operations team will only use the predicted probabilities directly if those probabilities mean what they say. The pipeline applies isotonic-regression calibration per (model, scenario) when the validation Expected Calibration Error (ECE; ten-bin quantile) exceeds 0.05, refits the F1-optimal threshold on the calibrated validation probabilities, and re-derives the test predictions accordingly. \Cref{fig:calibration} shows the resulting reliability diagrams. After calibration, the four tree-model ECEs drop to under 0.002 (LightGBM~A 0.001, LightGBM~B 0.000, XGBoost~A 0.002, XGBoost~B 0.000); logistic regression scenario~A retains ECE 0.076 -- a residual the linear model's lower information capacity cannot smooth out.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.92\textwidth]{stop_level/calibration_grid.png}
     \caption{Reliability diagrams: predicted probability on the x-axis, empirical disrupted-rate on the y-axis. Closer to the diagonal is better. Scenario-B XGBoost and LightGBM are tightly calibrated; logistic regression is dramatically over-confident at the top of the probability range.}
@@ -63,23 +63,23 @@ A high PR-AUC is necessary but not sufficient: a downstream operations team will
 
 \subsection{Per-country, per-position, per-train-class breakdowns}
 
-Aggregate test-set PR-AUC hides substantial structural variation. Scenario-B XGBoost reaches PR-AUC \num{0.989} on Finland (\num{495000} test rows), \num{0.858} on the Netherlands (\num{1790000} rows) and only \num{0.788} on Italy (\num{21000} rows). \Cref{fig:per-country} shows the per-country breakdown; \cref{fig:per-position} faceted by stop position quartile; \cref{fig:per-class} faceted by train class.
+Aggregate test-set PR-AUC hides substantial structural variation. Scenario-B XGBoost reaches PR-AUC \num{0.990} on Finland (\num{495040} test rows), \num{0.857} on the Netherlands (\num{1789432} rows) and \num{0.871} on Italy (\num{421971} rows). \Cref{fig:per-country} shows the per-country breakdown; \cref{fig:per-position} faceted by stop position quartile; \cref{fig:per-class} faceted by train class.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.92\textwidth]{stop_level/per_country_metrics.png}
     \caption{Test-set PR-AUC by country, faceted by scenario. Finland's small station count and high disruption rate make the per-station lag features unusually informative there; Italy is the hardest target, partly due to its small test sample and partly due to a known weather-feature bug discussed in \cref{sec:transfer}.}
     \label{fig:per-country}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.92\textwidth]{stop_level/per_position_metrics.png}
     \caption{PR-AUC by stop position quartile. In scenario~A the model is weakest near the origin (where less history exists). In scenario~B the curve flattens: the prior-stop signal dominates regardless of route position.}
     \label{fig:per-position}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.92\textwidth]{stop_level/per_train_class_metrics.png}
     \caption{PR-AUC by train class. Class~0 is local / commuter, class~5 is ultra-high-speed. The high-speed and intercity classes (3, 4, 5) are easier than local services, which have more variable headways and fewer dedicated tracks.}
@@ -88,9 +88,9 @@ Aggregate test-set PR-AUC hides substantial structural variation. Scenario-B XGB
 
 \subsection{Cascading respect}
 
-A useful sanity check on scenario~B is to ask whether the model actually \emph{uses} the inflight signal it is given. For each model we compute the predicted-disruption probability conditional on the prior stop being late versus on time. A meaningful gap means the model is reading the cascade. \Cref{fig:cascading} shows the result: the three tree-based models give roughly \num{0.97} when the prior stop is late versus \num{0.05} when it is on time, while logistic regression gives a softer \num{0.65} versus \num{0.05}.
+A useful sanity check on scenario~B is to ask whether the model actually \emph{uses} the inflight signal it is given. For each model we compute the binary-prediction rate conditional on the prior stop's actual disruption label, dropping the first stop of every service. A meaningful gap means the model is reading the cascade. For XGBoost~B the gap is large: $P(\hat{y}=1\mid y_{k-1}=1)=\num{0.938}$ versus $P(\hat{y}=1\mid y_{k-1}=0)=\num{0.005}$, a gap of \num{0.933}. \Cref{fig:cascading} renders the same number for every model.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.78\textwidth]{stop_level/cascading_respect.png}
     \caption{Scenario~B only. For each model we plot $P(\text{disrupted}\mid\text{prior stop late})$ against $P(\text{disrupted}\mid\text{prior stop on time})$. A wide gap (top-left) confirms the model is reading the cascading delay; the tree-based models all lie there.}

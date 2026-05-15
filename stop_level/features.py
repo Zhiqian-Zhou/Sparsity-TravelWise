@@ -268,8 +268,10 @@ def compute_train_lag(df: pd.DataFrame) -> pd.DataFrame:
     # Heuristic: train_number = service_id without country prefix or trailing _date
     train_num = sid.str.replace(r"^[A-Z]{2}_", "", regex=True)
     train_num = train_num.str.replace(r"_\d{4}-\d{2}-\d{2}$", "", regex=True)
-    df["_train_key"] = df["country"] + "_" + train_num if "country" in df.columns \
-                      else sid
+    df["_train_key"] = (
+        (df["country"].astype(str) + "_" + train_num)
+        if "country" in df.columns else sid
+    )
 
     df["_late"] = _stop_late(df)
     df["date"] = pd.to_datetime(df["date"]).dt.normalize()
