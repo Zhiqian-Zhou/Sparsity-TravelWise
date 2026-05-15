@@ -5,6 +5,21 @@
 
 The three operators share almost no schema. Italy publishes a flat per-stop CSV that encodes ``no upstream delay'' as the literal string \texttt{N} and ``cancelled'' as \texttt{S}. Finland publishes one row per train with every stop nested in a serialised Python literal carrying embedded FMI weather observations. The Netherlands publishes wide-tariff RDT exports with three separate cancellation flags and no built-in weather (we enrich it with Open-Meteo daily aggregates). After per-country preprocessing every country's \texttt{processed/} folder contains the same five tables (\texttt{nodes\_station, nodes\_service, edges\_stops\_at, edges\_adjacent, nodes\_fault}), which Phase~2 joins at the stop level.
 
+\subsection{Why each preprocessing step exists}
+\label{sec:preprocessing-rationale}
+
+Every per-country quirk listed above demands a specific preprocessing decision. The decisions are not arbitrary -- each is the cheapest way to avoid a documented downstream failure.
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Italy: streaming chunked load.} The operations CSV is \SI{412}{MB}; loading it with \texttt{pandas.read\_csv} in one shot peaks above \SI{6}{GB} resident on the unified frame. We read it in 200{,}000-row chunks, materialise only the columns we need, and downcast on the fly. Peak RAM falls below \SI{1}{GB}.
+    \item \textbf{Italy: separate label vs.\ cancellation track.} Replacing both \texttt{N} and \texttt{S} with \texttt{NaN} would discard the cancellation signal entirely. We replace both with \texttt{NaN} for the delay column \emph{but} preserve a separate \texttt{is\_cancelled} flag derived from \texttt{S}; otherwise the disruption label loses around \SI{2.5}{\percent} of true positives that are cancellations rather than late arrivals.
+    \item \textbf{Finland: regex pre-substitution before \texttt{ast.literal\_eval}.} Bare \texttt{nan} tokens inside the serialised \texttt{timeTableRows} cell cause \texttt{ast.literal\_eval} to raise. A targeted regex (\texttt{r'\textbackslash bnan\textbackslash b'} $\to$ \texttt{'None'}) runs once per cell before parsing; without it the entire FI feed fails to ingest.
+    \item \textbf{Finland: bilingual weather-key alias map.} FMI's REST API returns camelCase (\texttt{snowDepth, airTemperature}) but the embedded \texttt{weather\_observations} dict uses written-out English (\texttt{Snow depth, Air temperature}). The alias map handles both, otherwise around \SI{40}{\percent} of weather observations would be silently dropped.
+    \item \textbf{Netherlands: three-way cancellation OR.} A Dutch stop can be cancelled at arrival, at departure, or both, on top of a service-level \texttt{fully\_cancelled} flag. Taking only one of the four signals understates true cancellations by approximately \SI{12}{\percent}. We compute \texttt{any(axis=1)} across all four.
+    \item \textbf{Netherlands: cached Open-Meteo weather.} The RDT feed has no weather. \texttt{preprocess/weather\_enrichment\_nl.py} fetches daily aggregates per station via \texttt{requests-cache}; the first run hits the network 591 times (591 stations, 205 with usable observations); subsequent runs are network-free.
+    \item \textbf{All three: 0--4 weather-severity ordinal.} Raw weather columns (snow, precipitation, wind, visibility) live on incompatible scales across countries. We collapse them into a single \texttt{weather\_severity} ordinal so the downstream model sees a country-invariant signal; raw columns are kept alongside for the model to recover non-linearities if they are useful.
+\end{itemize}
+
 \begin{table}[H]
     \centering
     \caption{Per-country scale after Phase~1, Jan--Jun~2024. Stops in millions, services in thousands; exact counts: 16{,}600{,}169 stops, 1{,}559{,}006 services, 2{,}398 stations.}
@@ -29,7 +44,7 @@ The three operators share almost no schema. Italy publishes a flat per-stop CSV 
 
 \subsection{Per-stop features}
 
-\Cref{tab:feature-groups} groups the 37 pre-departure (A) features and the 40 inflight (B) features. B differs from A by exactly three additions, all describing actual delays at \emph{prior} stops on the same run.
+\Cref{tab:feature-groups} groups the 37 pre-departure (A) features and the 40 inflight (B) features. B differs from A by exactly three additions, all describing actual delays at \emph{prior} stops on the same run. The grouping reflects \emph{what each feature measures}, not the order in which it is computed; the rationale for each group follows the table.
 
 \begin{table}[H]
     \centering
@@ -54,6 +69,23 @@ The three operators share almost no schema. Italy publishes a flat per-stop CSV 
         \bottomrule
     \end{tabularx}
 \end{table}
+
+\subsection{Why these feature groups}
+\label{sec:feature-rationale}
+
+Each group answers a specific question that an experienced operator would ask before declaring a stop high-risk.
+
+\begin{description}[leftmargin=2.0em, style=nextline, itemsep=2pt]
+    \item[Stop position (7 cols).] Punctuality decays predictably along a route. \texttt{position\_norm} (a 0--1 fraction of the way through the run) carries that decay in a length-invariant way; \texttt{is\_origin} and \texttt{is\_terminus} flag the two endpoints whose disruption distributions differ from the middle of the route. \texttt{cum\_distance\_km} and \texttt{cum\_scheduled\_minutes} let the model express interactions like ``long route, late stop'' without having to discover the multiplication itself.
+    \item[Stop time (6 cols).] Hour-of-day captures rush-hour congestion; day-of-week separates weekday commuter patterns from weekend leisure traffic; \texttt{is\_holiday} flips the normal weekday template. We encode the month as both an ordinal and as $(\sin\frac{2\pi m}{12}, \cos\frac{2\pi m}{12})$ -- the cyclic encoding stops January and December from being treated as 11 units apart.
+    \item[Station static (5 cols).] \texttt{avg\_historical\_delay} per station is, on its own, the single strongest pre-departure feature; it summarises everything we know about the station's intrinsic congestion without us having to model it. \texttt{degree} and \texttt{betweenness\_centrality} flag hub vulnerability: hubs concentrate cascading effects, so the model can use those as a prior on disruption probability.
+    \item[Service identity (4 cols).] \texttt{train\_class\_code} encodes the operating class (commuter vs.\ regional vs.\ high-speed); high-speed services typically run on dedicated track and are punctuality outliers in both directions. The route distance and scheduled duration let the model express ``long, slow runs'' as a separate regime.
+    \item[Weather (5 cols).] We keep \texttt{weather\_severity} as a country-harmonised ordinal \emph{and} the raw \texttt{snow\_depth, precipitation, wind\_speed, temperature} columns. The severity ordinal is the country-invariant signal the linear model relies on; the raw columns let the trees discover non-linearities (e.g.\ \SI{30}{cm} of snow at \SI{-5}{\celsius} hits Finnish operations differently than \SI{30}{cm} at \SI{0}{\celsius}).
+    \item[Weather differential (2 cols).] Changes are often more predictive than levels: a sudden wind gust (positive \texttt{delta\_wind\_vs\_prev\_stop}) signals operational stress that the absolute wind value misses. We compute the change against the previous stop on the same run, not the previous calendar timestep.
+    \item[Lag features (7 cols).] These are the strongest pre-departure group, because they implicitly encode unobserved structural problems. If \texttt{station\_lag7\_rate} on station $S$ has been climbing for a week, the model can flag $S$ as risky without knowing whether the underlying cause is signal failure, track work or weather. \texttt{train\_station\_lag7\_rate} is the per-(train, station) recency rate -- the SHAP report shows this as the dominant pre-departure feature.
+    \item[Fault context (1 col).] \texttt{station\_n\_active\_faults\_14d} counts open infrastructure tickets at the station within the last fortnight; the 14-day window matches the typical infrastructure repair cycle observed in the Dutch fault log.
+    \item[Inflight (3 cols, scenario B only).] \texttt{prev\_stop\_actual\_delay} is a near-deterministic predictor of cascading: a train that is 8 minutes late at stop $k-1$ will, with high probability, also be late at stop $k$. \texttt{cum\_actual\_delay\_so\_far} and \texttt{max\_actual\_delay\_so\_far} let the model distinguish a single recovered shock from a run that is already losing time monotonically.
+\end{description}
 
 \subsection{Anti-leakage protocol}
 

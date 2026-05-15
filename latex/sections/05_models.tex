@@ -30,6 +30,34 @@ Identical imbalance treatment across models lets us interpret performance gaps a
 
 A static \num{0.5} threshold is rarely optimal under heavy imbalance. Each model inherits a \texttt{StopModel.tune\_threshold} method that sweeps 19 candidate thresholds in the interval $[0.05,~0.95]$, picks the one that maximises validation~F1, and persists it on the model. Inference uses the persisted threshold; no test-set information is involved at any point.
 
+\subsection{Training procedure details}
+\label{sec:training-details}
+
+The same training loop runs for every (model, scenario) pair. The deliberate symmetry across architectures lets us interpret performance gaps as architectural rather than tuning artefacts.
+
+\paragraph{Loss function.} All four models optimise weighted binary cross-entropy on the per-stop disruption label, using the train-set negative-to-positive ratio $w_+ \approx 9.7$ as the positive-class weight. Concretely, for a stop with label $y \in \{0, 1\}$ and predicted probability $\hat{p}$:
+\begin{equation}
+    \mathcal{L}(\hat{p}, y) \;=\; -\bigl[\, w_+ \cdot y \cdot \log(\hat{p}) \;+\; (1 - y) \cdot \log(1 - \hat{p}) \,\bigr].
+\end{equation}
+Training on raw, unweighted labels would let any of the four models collapse to ``never disrupted'' and still record \SI{91}{\percent} accuracy; reweighting makes a missed positive 9.7$\times$ more expensive than a missed negative, which forces the model to actually learn the rare class.
+
+\paragraph{Optimiser choice.} Each model's optimiser is the natural default for its architecture, not a tuned parameter:
+\begin{itemize}
+    \item \textbf{Logistic regression: SAGA.} A variance-reduced stochastic gradient method that handles non-smooth penalties (L1, elastic net) and converges reliably on tabular problems with millions of rows. We use it with L2 regularisation only.
+    \item \textbf{LightGBM, XGBoost: second-order gradient-boosted CART.} Both libraries fit one decision tree per round on the gradient and Hessian of the loss with respect to the previous round's prediction; the histogram-based split-finding is what makes them scale linearly to tens of millions of rows.
+    \item \textbf{GraphSAGE: AdamW.} Decoupled weight decay~\cite{loshchilov2019decoupled}, which behaves better than L2-on-Adam when LayerNorm scales matter; \texttt{lr}~$=\num{1e-3}$, \texttt{weight\_decay}~$=\num{1e-4}$, $\beta_1=\num{0.9}$, $\beta_2=\num{0.999}$.
+\end{itemize}
+
+\paragraph{Regularisation.} The four models regularise differently because their failure modes are different. Logistic regression uses L2 on the coefficient vector (default \texttt{C} = 1, no tuning). LightGBM regularises implicitly through the leaves and depth caps (63 leaves, depth 7, \texttt{min\_child\_samples} = 100); XGBoost adds an explicit $\lambda = 1$ L2 penalty on leaf weights. GraphSAGE uses dropout~\num{0.3} in the MLP head and the AdamW weight decay above; we deliberately avoid dropout inside the SAGEConv layers because mean-aggregation is already a smoother. None of the four uses early-layer L1 -- the L2 / leaf caps are sufficient given the modest 37 / 40 feature counts.
+
+\paragraph{Learning-rate schedule.} The tabular models use a step-wise constant rate $\eta = \num{0.05}$, which works because gradient boosting's effective learning rate is the product of $\eta$ and the per-tree contribution, and early stopping cuts off the schedule when val PR-AUC plateaus. GraphSAGE uses a cosine decay from \num{1e-3} to \num{1e-5} over 50 epochs; the long tail at low learning rate helps the LayerNorm scales settle, which a step decay does not.
+
+\paragraph{Early stopping watches val PR-AUC, not loss.} Weighted BCE loss and PR-AUC are correlated but not co-monotonic under heavy imbalance: a model can cut its loss by becoming better-calibrated on the easy negatives without improving its discrimination on the rare positives, and PR-AUC is what we actually care about operationally. Early stopping fires after 50 stagnant rounds for the tabular models (this is what produces the long XGBoost~B fit time -- the inflight features keep yielding good splits, so the criterion does not fire until roughly 1{,}400 rounds) and after 10 stagnant epochs for GraphSAGE.
+
+\paragraph{Calibration.} If validation ECE exceeds \num{0.05}, an isotonic regression~\cite{zadrozny2001calibration} is fit on validation probabilities and applied at inference. The threshold is then refit on the calibrated scores. In practice this triggers for logistic regression (which is congenitally over-confident under class weighting) and for GraphSAGE scenario~A; the four tree models all hit ECE below \num{0.002} after calibration. Logistic regression scenario~A is the only model that retains an ECE above \num{0.05} after isotonic calibration -- the linear capacity is too low to match the empirical disruption rate at the high-probability tail, and an isotonic fit cannot manufacture capacity it never had.
+
+\paragraph{Test set is touched once.} The early-stopping decision, the threshold sweep, the calibration decision, and any architectural choice (number of trees, depth, etc.) all use the validation split only. The test split is read once, after the model is frozen, to produce the headline metrics in \cref{tab:headline-metrics}.
+
 \subsection{Training run-times}
 
 \Cref{tab:train-times} reports wall-clock fit time for each model on each scenario. XGBoost scenario~B is the slowest single fit, at roughly nineteen minutes, because the inflight features carry so much signal that the model keeps finding good splits and the tree count grows substantially before early stopping fires.

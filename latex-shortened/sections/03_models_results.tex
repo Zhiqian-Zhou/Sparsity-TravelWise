@@ -3,14 +3,33 @@
 
 \subsection{Model zoo}
 
-Four families, each trained twice on identical splits with identical class-imbalance handling:
-\begin{itemize}
-    \item \textbf{Logistic regression}~\cite{pedregosa2011scikit} -- balanced \texttt{class\_weight}, SAGA, max 2000 iters. Strict linear baseline.
-    \item \textbf{LightGBM}~\cite{ke2017lightgbm} -- 1500 trees, 63 leaves, depth 7, \texttt{scale\_pos\_weight} = train neg/pos, early stop on val PR-AUC.
-    \item \textbf{XGBoost}~\cite{chen2016xgboost} -- 1500 trees, \texttt{tree\_method='hist'}, \texttt{eval\_metric='aucpr'}, early stop after 50 stagnant rounds.
-    \item \textbf{GraphSAGE}~\cite{hamilton2017inductive} -- two SAGEConv layers (mean aggr) + LayerNorm + Jumping-Knowledge concat over a station graph of \num{2398} nodes / \num{163902} directed edges, MLP head, AdamW + cosine LR. PyTorch~\cite{paszke2019pytorch} + PyTorch Geometric~\cite{fey2019fast}.
+Four families span linear, tree-based and graph-neural backbones, which lets us isolate where the non-linear and graph-structural signal actually matters. Each is trained twice -- once on the 37 pre-departure features (scenario~A), once on the 40 inflight features (scenario~B) -- on identical splits.
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Logistic regression}~\cite{pedregosa2011scikit} -- L2-regularised binary classifier, SAGA solver, balanced \texttt{class\_weight}, maximum 2{,}000 iterations. The SAGA solver supports both L1 and L2 penalties on million-row tabular data and converges reliably under heavy class imbalance. Strict linear baseline.
+    \item \textbf{LightGBM}~\cite{ke2017lightgbm} -- gradient-boosted decision trees with histogram-based, leaf-wise growth: 1{,}500 trees, 63 leaves, depth 7, \texttt{scale\_pos\_weight} = train\_neg/train\_pos $\approx 9.7$, learning rate \num{0.05}, early stopping on val PR-AUC after 50 stagnant rounds.
+    \item \textbf{XGBoost}~\cite{chen2016xgboost} -- depth-wise growth on the same hyperparameters: 1{,}500 trees, \texttt{tree\_method='hist'}, \texttt{eval\_metric='aucpr'}, $\eta=\num{0.05}$, $\lambda=1$ (L2), $\alpha=0$ (L1), early stop after 50 stagnant rounds.
+    \item \textbf{GraphSAGE}~\cite{hamilton2017inductive} -- a two-layer inductive GNN over the station adjacency graph (\num{2398} nodes, \num{163902} directed edges). Each layer is a \texttt{SAGEConv} with mean aggregation followed by LayerNorm and a ReLU; a Jumping-Knowledge \texttt{cat} block concatenates layer-1 and layer-2 outputs into the per-stop MLP head (32~$\to$~16~$\to$~1, dropout~\num{0.3}). Trained with AdamW (\texttt{lr}~$=\num{1e-3}$, \texttt{weight\_decay}~$=\num{1e-4}$) and a cosine-decay schedule to \num{1e-5} over 50 epochs. PyTorch~\cite{paszke2019pytorch} + PyTorch Geometric~\cite{fey2019fast}.
 \end{itemize}
-Tabular models train on a multi-core CPU host; GraphSAGE on a Tesla~T4. Each \texttt{StopModel} sweeps 19 thresholds in $[0.05,0.95]$ and persists the val-F1-optimal one. Isotonic calibration is applied per (model, scenario) when val ECE $> \num{0.05}$; the threshold is then refit on calibrated probabilities.
+
+\subsection{Training procedure}
+\label{sec:training}
+
+The same loop runs for every (model, scenario) pair. The deliberate symmetry across architectures lets us interpret performance gaps as architectural rather than tuning artefacts.
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Loss.} All four optimise weighted binary cross-entropy on the per-stop disruption label. The positive-class weight is the train-set negative-to-positive ratio, $w_+ \approx 9.7$. Minimising raw BCE on the unweighted labels would let any of the four models collapse to ``never disrupted'' and still record \SI{91}{\percent} accuracy; reweighting makes a missed positive 9.7$\times$ more expensive than a missed negative.
+    \item \textbf{Optimiser and regularisation.} Logistic regression uses SAGA (a variance-reduced stochastic gradient method that handles non-smooth penalties). LightGBM and XGBoost use second-order gradient-boosted CART; regularisation is implicit in the leaves/depth caps and explicit through XGBoost's $\lambda=1$ L2 leaf-weight penalty. GraphSAGE uses AdamW (decoupled weight decay, which behaves better than L2-on-Adam when LayerNorm scales matter), \texttt{weight\_decay}~$=\num{1e-4}$, dropout~\num{0.3} in the MLP head. None of the four uses early-layer L1 -- the L2 / leaf caps are sufficient given the modest feature count.
+    \item \textbf{Learning-rate schedule.} Tabular models are step-wise constant ($\eta=\num{0.05}$ with early stop). GraphSAGE uses a cosine decay from \num{1e-3} to \num{1e-5} over 50 epochs; the long tail at low LR helps the LayerNorm scales settle.
+    \item \textbf{Early stopping watches val PR-AUC, not loss.} BCE loss and PR-AUC are correlated but not co-monotonic under heavy imbalance; PR-AUC is the metric that matters operationally, so it is the metric the stopping criterion watches. Stop after 50 stagnant rounds (tabular) or 10 stagnant epochs (GraphSAGE).
+    \item \textbf{Threshold tuning.} A static \num{0.5} threshold is rarely optimal under \SI{9}{\percent} prevalence. Each model inherits a \texttt{StopModel.tune\_threshold} method that sweeps 19 candidate thresholds in $[\num{0.05}, \num{0.95}]$ on \emph{validation} probabilities and persists the val-F1-optimal one.
+    \item \textbf{Isotonic calibration when needed.} If val ECE $> \num{0.05}$, an isotonic regression~\cite{zadrozny2001calibration} is fit on val probabilities; the threshold is then refit on the calibrated scores. Logistic regression scenario~A is the only model that retains an ECE above \num{0.05} after calibration -- the linear capacity is too low to match the empirical rate at high probabilities.
+    \item \textbf{Test set is touched once.} All hyperparameter choices, the early-stop decision, the threshold sweep and the calibration decision use validation only. The test set is read once, after the model is frozen, and produces the headline metrics in \cref{tab:headline}.
+\end{enumerate}
+
+\subsection{Wall-clock fit times}
+
+Tabular models train on a multi-core CPU host; GraphSAGE on a single Tesla~T4. Wall-clock fit time per (model, scenario): logreg \SI{123}{s} / \SI{83}{s}, LightGBM \SI{29}{s} / \SI{240}{s}, XGBoost \SI{174}{s} / \SI{1166}{s}, GraphSAGE \SI{74}{s} / \SI{134}{s}. The XGBoost scenario-B blow-up to roughly nineteen minutes is interpretable: with the inflight features the model keeps finding good splits, so the tree count grows substantially before early stopping fires.
 
 \subsection{Test-set headline metrics}
 

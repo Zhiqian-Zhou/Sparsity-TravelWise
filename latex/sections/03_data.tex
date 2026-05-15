@@ -3,6 +3,8 @@
 
 The pipeline ingests open data from three operators that, despite covering similar railway operations, expose almost nothing in common at the schema level. \Cref{tab:data-sources} summarises the row counts that each country contributes after Phase~1 preprocessing. The combined feature store covers \num{16600169} stop rows belonging to \num{1559006} services across \num{2398} stations.
 
+\paragraph{Design philosophy of the preprocessor.} Each per-country quirk in this section forces a specific design decision in \texttt{preprocess/}. The decisions are not aesthetic: each one is the cheapest way we found to avoid a documented downstream failure -- a memory blow-up, a silent label loss, or an accidentally dropped weather observation. The bullets that open each subsection state the quirk and the failure it would otherwise cause; the rest of the subsection states the chosen mitigation in the form actually shipped in the codebase.
+
 \begin{table}[H]
     \centering
     \caption{Per-country data sources and scale after Phase~1. All windows are 2024-01-01 to 2024-06-30. Stops are individual (service, station) rows; services are scheduled runs; stations are unique node IDs after deduplication. Stops are reported in millions, services in thousands; exact counts: 16{,}600{,}169 stops, 1{,}559{,}006 services, 2{,}398 stations. Italy contributes proportionally fewer stops because its source feed is restricted to long-distance services.}
