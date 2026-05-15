@@ -37,6 +37,9 @@
 \usepackage{graphicx}
 \usepackage{subcaption}
 \usepackage{float}
+% Allow long monospace identifiers (e.g. dotted Maven coords, snake_case
+% column lists) to break across lines via \seqsplit{...} inside \texttt{...}.
+\usepackage{seqsplit}
 \usepackage{caption}
 % NOTE: caption v3 deprecated `bold`; use `bf` instead.
 \captionsetup[figure]{font=small, labelfont=bf, justification=raggedright,
@@ -51,9 +54,15 @@
 % siunitx v3 default; we use S columns liberally for decimal alignment in
 % result tables. detect-weight + detect-family let \bfseries inside `{...}`
 % inside an S cell render bold without re-parsing.
+% round-mode=none: \num{x} renders x verbatim with thousand-separator grouping
+% only — no auto-padding to 3 decimal places. (The earlier round-mode=places /
+% round-precision=3 default polluted plain integers in prose with ".000"
+% suffixes, e.g. "2,398.000 stations". Per-cell rounding can still be enabled
+% on individual S columns via \num{x}[round-mode=places, round-precision=N]
+% or S[round-precision=N].)
 \sisetup{detect-weight=true, detect-family=true,
           group-separator={,}, group-minimum-digits=4,
-          round-mode=places, round-precision=3}
+          round-mode=none}
 
 % ── Code listings (lightweight; no shell-escape) ─────────────────────────────
 % We previously used `minted`, which calls Pygments and tripped the

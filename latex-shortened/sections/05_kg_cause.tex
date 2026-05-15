@@ -5,7 +5,7 @@
 
 \paragraph{Why.} The four-model benchmark and the SHAP report deliver per-row probabilities and per-row attributions. Both are useful but neither answers \emph{why is this stop on the high-risk list?} That question requires graph-shaped context: the station's reliability history, recent fault reports, the immediate neighbours on the network. We therefore promote the Phase~1/2 outputs to a queryable graph database.
 
-\paragraph{Backend.} Sparksee~5.2.3~\cite{sparksee2024,martinez2017dex}, sourced from Maven Central as \texttt{com.sparsity:sparkseejava:5.2.3}. We drive its native Java API from Python via JPype1. A one-shell-command installer (\texttt{scripts/install\_sparksee.sh}) downloads the jar plus a portable Eclipse Temurin~17 JDK into a project-local \texttt{.tools/} directory; no system-level Java install is required. Built on a Tesla~T4 + 4-core CPU host.
+\paragraph{Backend.} Sparksee~5.2.3~\cite{sparksee2024,martinez2017dex}, sourced from Maven Central as \texttt{\seqsplit{com.sparsity:sparkseejava:5.2.3}}. We drive its native Java API from Python via JPype1. A one-shell-command installer (\texttt{scripts/install\_sparksee.sh}) downloads the jar plus a portable Eclipse Temurin~17 JDK into a project-local \texttt{.tools/} directory; no system-level Java install is required. Built on a Tesla~T4 + 4-core CPU host.
 
 \paragraph{Schema.} Three node types and three edge types:
 \begin{itemize}

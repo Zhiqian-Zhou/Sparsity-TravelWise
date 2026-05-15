@@ -2,344 +2,344 @@
   "scenarios": {
     "A": {
       "model": "xgb",
-      "n_test_samples": 2303236,
+      "n_test_samples": 270644,
       "top_features": [
         {
           "name": "train_station_lag7_rate",
-          "value": 1.0483
+          "value": 1.0606
         },
         {
           "name": "avg_historical_delay",
-          "value": 0.6163
+          "value": 0.3959
         },
         {
           "name": "stop_order",
-          "value": 0.245
-        },
-        {
-          "name": "cum_distance_km",
-          "value": 0.1599
-        },
-        {
-          "name": "temperature",
-          "value": 0.1562
-        },
-        {
-          "name": "lat",
-          "value": 0.1018
-        },
-        {
-          "name": "degree",
-          "value": 0.0907
-        },
-        {
-          "name": "position_norm",
-          "value": 0.0728
+          "value": 0.2728
         },
         {
           "name": "station_lag7_rate",
-          "value": 0.0566
+          "value": 0.194
         },
         {
-          "name": "station_lag1_rate",
-          "value": 0.051
+          "name": "temperature",
+          "value": 0.1651
         },
         {
-          "name": "is_origin",
-          "value": 0.0476
+          "name": "position_norm",
+          "value": 0.1565
         },
         {
-          "name": "service_route_distance_km",
-          "value": 0.0474
+          "name": "cum_distance_km",
+          "value": 0.1174
+        },
+        {
+          "name": "degree",
+          "value": 0.0862
+        },
+        {
+          "name": "lat",
+          "value": 0.0846
+        },
+        {
+          "name": "station_lag1_avg_delay",
+          "value": 0.0714
         },
         {
           "name": "scheduled_arrival_dow",
-          "value": 0.0413
+          "value": 0.0655
+        },
+        {
+          "name": "is_origin",
+          "value": 0.0643
         },
         {
           "name": "train_lag7_rate",
-          "value": 0.0407
-        },
-        {
-          "name": "station_lag1_avg_delay",
-          "value": 0.0369
-        },
-        {
-          "name": "delta_wind_vs_prev_stop",
-          "value": 0.0369
-        },
-        {
-          "name": "train_class_code",
-          "value": 0.0345
-        },
-        {
-          "name": "wind_speed",
-          "value": 0.0322
-        },
-        {
-          "name": "train_lag1_rate",
-          "value": 0.0287
+          "value": 0.0486
         },
         {
           "name": "n_total_stops",
-          "value": 0.0284
-        }
-      ],
-      "local_explanations": {
-        "tp": {
-          "row_index": 204063,
-          "service_id": "FI_33_2024-06-07",
-          "station_id": "FI_KLV",
-          "y_stop": 1,
-          "p_disrupted": 0.9906018972396851,
-          "top_drivers": {
-            "train_station_lag7_rate": 2.545837879180908,
-            "avg_historical_delay": 0.8370329141616821,
-            "station_lag1_rate": 0.2794654071331024,
-            "degree": 0.16157735884189606,
-            "train_lag1_rate": 0.15961354970932007,
-            "stop_order": 0.14478884637355804,
-            "position_norm": 0.14198605716228485,
-            "n_total_stops": 0.13254518806934357
-          }
-        },
-        "fn": {
-          "row_index": 1910728,
-          "service_id": "NL_13825750",
-          "station_id": "NL_NEUSS",
-          "y_stop": 1,
-          "p_disrupted": 0.357181191444397,
-          "top_drivers": {
-            "train_station_lag7_rate": -0.931527853012085,
-            "avg_historical_delay": 0.6133788824081421,
-            "station_lag7_rate": 0.18784774839878082,
-            "temperature": -0.17453478276729584,
-            "station_lag1_avg_delay": 0.10368454456329346,
-            "degree": -0.08974157273769379,
-            "wind_speed": -0.0766974613070488,
-            "station_lag1_rate": 0.06557773053646088
-          }
-        },
-        "fp": {
-          "row_index": 125671,
-          "service_id": "FI_23_2024-06-14",
-          "station_id": "FI_KML",
-          "y_stop": 0,
-          "p_disrupted": 0.9893759489059448,
-          "top_drivers": {
-            "train_station_lag7_rate": 2.5658795833587646,
-            "avg_historical_delay": 0.8312569260597229,
-            "station_lag1_rate": 0.25545525550842285,
-            "train_lag1_rate": 0.15326565504074097,
-            "degree": 0.1496337503194809,
-            "stop_order": 0.13915054500102997,
-            "temperature": -0.12373201549053192,
-            "position_norm": 0.12054771929979324
-          }
-        },
-        "AB_flip": {
-          "row_index": 2051573,
-          "service_id": "NL_13841202",
-          "station_id": "NL_WAD",
-          "y_stop": 1,
-          "p_disrupted": 0.025126097723841667,
-          "top_drivers": {
-            "train_station_lag7_rate": -1.3086730241775513,
-            "avg_historical_delay": -1.1240075826644897,
-            "cum_distance_km": -0.34662675857543945,
-            "temperature": -0.1799343377351761,
-            "degree": -0.13237258791923523,
-            "station_lag7_rate": -0.11217059940099716,
-            "service_route_distance_km": -0.09492180496454239,
-            "station_lag1_avg_delay": -0.07081780582666397
-          }
-        }
-      },
-      "base_value": 0.000211868216865696
-    },
-    "B": {
-      "model": "xgb",
-      "n_test_samples": 2303236,
-      "top_features": [
-        {
-          "name": "prev_stop_actual_delay",
-          "value": 2.5465
+          "value": 0.0409
         },
         {
-          "name": "stop_order",
-          "value": 0.486
-        },
-        {
-          "name": "max_actual_delay_so_far",
-          "value": 0.4558
-        },
-        {
-          "name": "avg_historical_delay",
-          "value": 0.3839
-        },
-        {
-          "name": "train_station_lag7_rate",
-          "value": 0.2804
-        },
-        {
-          "name": "service_route_distance_km",
-          "value": 0.2403
-        },
-        {
-          "name": "degree",
-          "value": 0.2314
-        },
-        {
-          "name": "cum_distance_km",
-          "value": 0.1823
+          "name": "station_lag1_rate",
+          "value": 0.0382
         },
         {
           "name": "lon",
-          "value": 0.1803
+          "value": 0.0371
         },
         {
-          "name": "lat",
-          "value": 0.1654
+          "name": "train_lag1_rate",
+          "value": 0.0369
         },
         {
-          "name": "n_total_stops",
-          "value": 0.1592
-        },
-        {
-          "name": "position_norm",
-          "value": 0.1554
-        },
-        {
-          "name": "betweenness_centrality",
-          "value": 0.1123
-        },
-        {
-          "name": "cum_actual_delay_so_far",
-          "value": 0.0946
-        },
-        {
-          "name": "delta_wind_vs_prev_stop",
-          "value": 0.0873
-        },
-        {
-          "name": "temperature",
-          "value": 0.0868
+          "name": "service_route_distance_km",
+          "value": 0.0353
         },
         {
           "name": "nbr_lag1_rate",
-          "value": 0.079
+          "value": 0.0322
         },
         {
           "name": "train_class_code",
-          "value": 0.0749
-        },
-        {
-          "name": "station_lag1_avg_delay",
-          "value": 0.0713
-        },
-        {
-          "name": "station_lag7_rate",
-          "value": 0.0524
+          "value": 0.0304
         }
       ],
       "local_explanations": {
         "tp": {
-          "row_index": 192879,
-          "service_id": "FI_28_2024-06-30",
-          "station_id": "FI_HKH",
+          "row_index": 220302,
+          "service_id": "FI_25_2024-06-28",
+          "station_id": "FI_KNS",
           "y_stop": 1,
-          "p_disrupted": 0.9999997615814209,
+          "p_disrupted": 0.9918487071990967,
           "top_drivers": {
-            "prev_stop_actual_delay": 8.430201530456543,
-            "avg_historical_delay": 1.0457086563110352,
-            "lat": 0.8081728219985962,
-            "lon": 0.7202000617980957,
-            "betweenness_centrality": 0.6962745785713196,
-            "temperature": 0.4329705834388733,
-            "cum_distance_km": 0.42346611618995667,
-            "delta_wind_vs_prev_stop": 0.3771011233329773
+            "train_station_lag7_rate": 2.5848886966705322,
+            "avg_historical_delay": 0.6140278577804565,
+            "station_lag7_rate": 0.29079049825668335,
+            "degree": 0.1854928433895111,
+            "n_total_stops": 0.17878998816013336,
+            "stop_order": 0.15872478485107422,
+            "position_norm": 0.14404626190662384,
+            "train_lag7_rate": 0.1428721398115158
           }
         },
         "fn": {
-          "row_index": 1910728,
+          "row_index": 186241,
           "service_id": "NL_13825750",
-          "station_id": "NL_NEUSS",
+          "station_id": "NL_KSWE",
           "y_stop": 1,
-          "p_disrupted": 0.05170978605747223,
+          "p_disrupted": 0.2545216679573059,
           "top_drivers": {
-            "prev_stop_actual_delay": -2.2345919609069824,
-            "service_route_distance_km": -0.607353687286377,
-            "max_actual_delay_so_far": -0.5332669615745544,
-            "degree": -0.31559741497039795,
-            "cum_distance_km": 0.3105815649032593,
-            "avg_historical_delay": 0.25890347361564636,
-            "train_station_lag7_rate": -0.22230878472328186,
-            "lat": -0.1970335841178894
+            "train_station_lag7_rate": -1.0057201385498047,
+            "station_lag7_rate": 0.31309425830841064,
+            "temperature": -0.191207155585289,
+            "avg_historical_delay": 0.17992189526557922,
+            "nbr_lag1_rate": -0.1732509881258011,
+            "degree": -0.10259678959846497,
+            "stop_order": 0.07128479331731796,
+            "train_lag7_rate": -0.0664602667093277
           }
         },
         "fp": {
-          "row_index": 395010,
-          "service_id": "FI_710_2024-06-18",
-          "station_id": "FI_KAJ",
+          "row_index": 262661,
+          "service_id": "FI_23_2024-06-14",
+          "station_id": "FI_KML",
           "y_stop": 0,
-          "p_disrupted": 0.9999611377716064,
+          "p_disrupted": 0.9896903038024902,
           "top_drivers": {
-            "prev_stop_actual_delay": 6.98175048828125,
-            "lon": 0.9250689148902893,
-            "avg_historical_delay": 0.8651404976844788,
-            "delta_wind_vs_prev_stop": 0.4647037386894226,
-            "lat": 0.4099113345146179,
-            "cum_distance_km": 0.32288146018981934,
-            "temperature": 0.25366923213005066,
-            "degree": -0.21296845376491547
+            "train_station_lag7_rate": 2.5366718769073486,
+            "avg_historical_delay": 0.5759111642837524,
+            "station_lag7_rate": 0.2695384621620178,
+            "degree": 0.18256336450576782,
+            "n_total_stops": 0.1780574470758438,
+            "train_lag1_rate": 0.1718704253435135,
+            "position_norm": 0.16013392806053162,
+            "train_lag7_rate": 0.15345822274684906
           }
         },
         "AB_flip": {
-          "row_index": 2051573,
-          "service_id": "NL_13841202",
-          "station_id": "NL_WAD",
-          "y_stop": 1,
-          "p_disrupted": 0.9936471581459045,
+          "row_index": 97299,
+          "service_id": "NL_13864756",
+          "station_id": "NL_ASSP",
+          "y_stop": 0,
+          "p_disrupted": 0.0006149664404802024,
           "top_drivers": {
-            "prev_stop_actual_delay": 5.775276184082031,
-            "max_actual_delay_so_far": 0.6280907988548279,
-            "avg_historical_delay": -0.4101986885070801,
-            "degree": -0.4100353419780731,
-            "train_station_lag7_rate": -0.2716594338417053,
-            "cum_distance_km": 0.16583971679210663,
-            "service_route_distance_km": 0.16561658680438995,
-            "delta_wind_vs_prev_stop": 0.15708614885807037
+            "stop_order": -1.9973300695419312,
+            "train_station_lag7_rate": -1.1338021755218506,
+            "position_norm": -0.92015141248703,
+            "is_origin": -0.45589393377304077,
+            "avg_historical_delay": -0.45552942156791687,
+            "n_total_stops": -0.3750388026237488,
+            "lat": -0.3403625786304474,
+            "lon": -0.2987987995147705
           }
         }
       },
-      "base_value": 0.015257803723216057
+      "base_value": 0.0004471870488487184
+    },
+    "B": {
+      "model": "xgb",
+      "n_test_samples": 270644,
+      "top_features": [
+        {
+          "name": "prev_stop_actual_delay",
+          "value": 2.4645
+        },
+        {
+          "name": "stop_order",
+          "value": 0.6741
+        },
+        {
+          "name": "train_station_lag7_rate",
+          "value": 0.3752
+        },
+        {
+          "name": "max_actual_delay_so_far",
+          "value": 0.3629
+        },
+        {
+          "name": "avg_historical_delay",
+          "value": 0.2965
+        },
+        {
+          "name": "position_norm",
+          "value": 0.269
+        },
+        {
+          "name": "lon",
+          "value": 0.1725
+        },
+        {
+          "name": "cum_distance_km",
+          "value": 0.1647
+        },
+        {
+          "name": "service_route_distance_km",
+          "value": 0.141
+        },
+        {
+          "name": "station_lag1_avg_delay",
+          "value": 0.1319
+        },
+        {
+          "name": "lat",
+          "value": 0.1317
+        },
+        {
+          "name": "degree",
+          "value": 0.1128
+        },
+        {
+          "name": "betweenness_centrality",
+          "value": 0.1073
+        },
+        {
+          "name": "temperature",
+          "value": 0.0972
+        },
+        {
+          "name": "cum_actual_delay_so_far",
+          "value": 0.0895
+        },
+        {
+          "name": "n_total_stops",
+          "value": 0.0884
+        },
+        {
+          "name": "delta_wind_vs_prev_stop",
+          "value": 0.0863
+        },
+        {
+          "name": "station_lag7_rate",
+          "value": 0.0697
+        },
+        {
+          "name": "train_class_code",
+          "value": 0.0683
+        },
+        {
+          "name": "nbr_lag1_rate",
+          "value": 0.0675
+        }
+      ],
+      "local_explanations": {
+        "tp": {
+          "row_index": 267964,
+          "service_id": "FI_24_2024-06-06",
+          "station_id": "FI_HKH",
+          "y_stop": 1,
+          "p_disrupted": 0.9999992847442627,
+          "top_drivers": {
+            "prev_stop_actual_delay": 8.344001770019531,
+            "betweenness_centrality": 0.9081329107284546,
+            "lon": 0.7513564229011536,
+            "max_actual_delay_so_far": 0.7238080501556396,
+            "avg_historical_delay": 0.5946369767189026,
+            "train_station_lag7_rate": 0.39711493253707886,
+            "cum_distance_km": 0.3232130706310272,
+            "cum_actual_delay_so_far": 0.28948211669921875
+          }
+        },
+        "fn": {
+          "row_index": 215345,
+          "service_id": "NL_13758264",
+          "station_id": "NL_UT",
+          "y_stop": 1,
+          "p_disrupted": 0.796362578868866,
+          "top_drivers": {
+            "prev_stop_actual_delay": -1.6504294872283936,
+            "train_station_lag7_rate": 1.4354989528656006,
+            "avg_historical_delay": -0.5637722611427307,
+            "train_class_code": 0.4977090656757355,
+            "degree": 0.3814903497695923,
+            "cum_distance_km": 0.33885812759399414,
+            "betweenness_centrality": 0.3165093660354614,
+            "service_route_distance_km": 0.2866704761981964
+          }
+        },
+        "fp": {
+          "row_index": 240798,
+          "service_id": "FI_1971_2024-06-15",
+          "station_id": "FI_RKI",
+          "y_stop": 0,
+          "p_disrupted": 0.9999158382415771,
+          "top_drivers": {
+            "prev_stop_actual_delay": 6.813748359680176,
+            "lon": 0.7587745785713196,
+            "max_actual_delay_so_far": 0.5690871477127075,
+            "stop_order": -0.3400767743587494,
+            "cum_distance_km": 0.3338049352169037,
+            "avg_historical_delay": 0.3284011483192444,
+            "n_total_stops": 0.3183104693889618,
+            "train_station_lag7_rate": 0.26683396100997925
+          }
+        },
+        "AB_flip": {
+          "row_index": 72209,
+          "service_id": "NL_13730277",
+          "station_id": "NL_LEER",
+          "y_stop": 0,
+          "p_disrupted": 3.2266481753140397e-07,
+          "top_drivers": {
+            "stop_order": -3.3198342323303223,
+            "prev_stop_actual_delay": -2.6641197204589844,
+            "position_norm": -1.498449444770813,
+            "avg_historical_delay": -1.3650853633880615,
+            "station_lag1_avg_delay": -0.7962397933006287,
+            "lon": -0.6930006742477417,
+            "lat": -0.6594443917274475,
+            "max_actual_delay_so_far": -0.5749265551567078
+          }
+        }
+      },
+      "base_value": 0.018738364800810814
     }
   },
   "lag_ablation": {
     "A": {
       "model": "xgb",
       "scenario": "A",
-      "pr_auc_full": 0.5517473966026564,
-      "pr_auc_no_lag": 0.35495677630472433,
-      "delta": 0.19679062029793204,
+      "pr_auc_full": 0.5330162407495577,
+      "pr_auc_no_lag": 0.3503509847005814,
+      "delta": 0.18266525604897627,
       "n_features_full": 37,
       "n_features_no_lag": 30
     },
     "B": {
       "model": "xgb",
       "scenario": "B",
-      "pr_auc_full": 0.952395219917245,
-      "pr_auc_no_lag": 0.35495677630472433,
-      "delta": 0.5974384436125206,
+      "pr_auc_full": 0.9398933078033692,
+      "pr_auc_no_lag": 0.3503509847005814,
+      "delta": 0.5895423231027879,
       "n_features_full": 40,
       "n_features_no_lag": 30
     }
   },
   "scenario_uplift": {
-    "n_rows": 2303236,
-    "mean_uplift": -0.11495668441057205,
-    "uplift_pos25": -0.07106870412826538,
-    "uplift_pos75": -0.1307588815689087
+    "n_rows": 2706443,
+    "mean_uplift": -0.12829811871051788,
+    "uplift_pos25": -0.10813571512699127,
+    "uplift_pos75": -0.15257439017295837
   },
   "kg_bridge_query": "MATCH (svc:TrainService {service_id: $sid})-[:STOPS_AT]->(st:Station {station_id: $stid})\nOPTIONAL MATCH (f:FaultEvent)-[:REPORTED_AT]->(st)\n  WHERE f.date >= date($d) - duration({days: 14})\nOPTIONAL MATCH (st)-[:ADJACENT_TO]->(nbr:Station)\nRETURN st, collect(DISTINCT f) AS recent_faults, collect(DISTINCT nbr.station_id) AS neighbours"
 }

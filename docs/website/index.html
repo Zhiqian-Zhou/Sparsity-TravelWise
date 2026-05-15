@@ -86,8 +86,9 @@
 <section class="section" id="xai">
   <div class="section-head">
     <h2>② SHAP feature importance</h2>
-    <p class="lead">TreeSHAP on the full 2.30 M-row test set. Lag and inflight features carry virtually all the
-      A→B uplift.</p>
+    <p class="lead">TreeSHAP on a <span id="xai-shap-size">270 k</span> stratified subsample of the
+      <span id="xai-test-size">2.71 M</span>-row test set. Lag and inflight features carry virtually all
+      the A→B uplift.</p>
   </div>
   <div class="tabs" id="shap-tabs">
     <button data-scenario="A" class="active">Scenario A — pre-departure</button>
@@ -98,18 +99,18 @@
   <div class="grid grid-2" style="margin-top:24px">
     <div class="card">
       <h3>Lag-feature ablation</h3>
-      <p class="muted">Re-fit the winning XGB without any <code>*_lag*</code> or inflight feature. Both scenarios collapse to PR-AUC <strong>0.355</strong>.</p>
+      <p class="muted">Re-fit the winning XGB without any <code>*_lag*</code> or inflight feature. Both scenarios collapse to roughly the same PR-AUC (A: <strong id="xai-lag-pr-A">0.350</strong>, B: <strong id="xai-lag-pr-B">0.350</strong>).</p>
       <div class="grid grid-2" style="gap:8px">
-        <div class="metric primary"><div class="v">+0.197</div><div class="l">Δ PR-AUC, scenario A</div></div>
-        <div class="metric danger"><div class="v">+0.597</div><div class="l">Δ PR-AUC, scenario B</div></div>
+        <div class="metric primary"><div class="v" id="xai-lag-delta-A">+0.183</div><div class="l">Δ PR-AUC, scenario A</div></div>
+        <div class="metric danger"><div class="v" id="xai-lag-delta-B">+0.589</div><div class="l">Δ PR-AUC, scenario B</div></div>
       </div>
     </div>
     <div class="card">
       <h3>Scenario uplift</h3>
-      <p class="muted">Mean P_B − P_A across 2.30 M test rows.</p>
+      <p class="muted">Mean P_B − P_A across <span id="xai-uplift-rows">2.71 M</span> test rows.</p>
       <div class="grid grid-2" style="gap:8px">
-        <div class="metric"><div class="v" id="m-uplift-mean">−0.115</div><div class="l">Mean uplift</div></div>
-        <div class="metric"><div class="v" id="m-uplift-pos75">−0.131</div><div class="l">Pos 75-100%</div></div>
+        <div class="metric"><div class="v" id="m-uplift-mean">−0.128</div><div class="l">Mean uplift</div></div>
+        <div class="metric"><div class="v" id="m-uplift-pos75">−0.153</div><div class="l">Pos 75-100%</div></div>
       </div>
       <p class="muted" style="margin-top:14px;font-size:13px">Negative uplift = scenario B is more selective; A over-predicts.</p>
     </div>
@@ -157,9 +158,9 @@
 <section class="section" id="map-section">
   <div class="section-head">
     <h2>④ Station network map</h2>
-    <p class="lead">1,935 stations across IT/FI/NL with valid coordinates (462 FI stations
-      lack coords in the FMI source and aren't geographic). Markers cluster
-      at low zoom; expand to individual stations as you zoom in.</p>
+    <p class="lead"><span id="map-n-coords">1,935</span> stations across IT/FI/NL with valid coordinates
+      (<span id="map-n-fi-missing">451</span> FI stations lack coords in the FMI source and aren't geographic).
+      Markers cluster at low zoom; expand to individual stations as you zoom in.</p>
   </div>
 
   <div class="map-controls">
@@ -389,10 +390,10 @@
     <p class="lead">An embedded <strong>Sparksee 5.2.3</strong> graph (Maven Central jar driven from Python via JPype). 6 tables, full-graph schema sized for 16.75 M relationships, bridge query in <strong>7.7 ms</strong>. The eval-mode build ships the FI_HKH hub subgraph; the schema, loader, and bridge-demo code paths are identical for licence holders loading the full graph.</p>
   </div>
   <div class="grid grid-3">
-    <div class="metric primary card"><div class="v" id="kg-stations">2,397</div><div class="l">Stations (full)</div></div>
-    <div class="metric primary card"><div class="v" id="kg-services">1,217,406</div><div class="l">Train services (full)</div></div>
+    <div class="metric primary card"><div class="v" id="kg-stations">2,398</div><div class="l">Stations (full)</div></div>
+    <div class="metric primary card"><div class="v" id="kg-services">1,559,006</div><div class="l">Train services (full)</div></div>
     <div class="metric primary card"><div class="v" id="kg-faults">2,938</div><div class="l">Fault events (full)</div></div>
-    <div class="metric warning card"><div class="v" id="kg-stops">16,586,834</div><div class="l">STOPS_AT edges (full)</div></div>
+    <div class="metric warning card"><div class="v" id="kg-stops">16,600,169</div><div class="l">STOPS_AT edges (full)</div></div>
     <div class="metric warning card"><div class="v" id="kg-adj">163,902</div><div class="l">ADJACENT_TO edges (full)</div></div>
     <div class="metric success card"><div class="v">7.7 ms</div><div class="l">Bridge query (Sparksee)</div></div>
   </div>

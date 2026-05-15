@@ -74,6 +74,7 @@ async function loadAll() {
   STATE.stations = s;  STATE.predictions = p; STATE.kg = kg;
   STATE.stationsMeta = m || {};
   hydrateHero();
+  hydrateXaiCards();
   drawBenchmarkBars();
   drawBreakdowns();
   drawShap();
@@ -82,15 +83,70 @@ async function loadAll() {
   wirePredict();
 }
 
+// ── XAI cards: lag-ablation deltas + scenario-uplift figures (from xai.json)
+function hydrateXaiCards() {
+  const x = STATE.xai;
+  if (!x) return;
+  const fmtSigned = v => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(3);
+  const setEl = (id, txt) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = txt;
+  };
+
+  // Lag ablation card: ΔPR-AUC for A and B
+  if (x.lag_ablation && x.lag_ablation.A && x.lag_ablation.B) {
+    setEl("xai-lag-delta-A", fmtSigned(x.lag_ablation.A.delta));
+    setEl("xai-lag-delta-B", fmtSigned(x.lag_ablation.B.delta));
+    setEl("xai-lag-pr-A",  x.lag_ablation.A.pr_auc_no_lag.toFixed(3));
+    setEl("xai-lag-pr-B",  x.lag_ablation.B.pr_auc_no_lag.toFixed(3));
+  }
+
+  // Scenario uplift card
+  if (x.scenario_uplift) {
+    setEl("m-uplift-mean",  fmtSigned(x.scenario_uplift.mean_uplift));
+    setEl("m-uplift-pos75", fmtSigned(x.scenario_uplift.uplift_pos75));
+    setEl("xai-uplift-rows", (x.scenario_uplift.n_rows / 1e6).toFixed(2) + " M");
+  }
+
+  // SHAP section subtitle: real test-set size + actual SHAP sample size
+  const nTest = STATE.benchmark && STATE.benchmark.splits ? STATE.benchmark.splits.test : null;
+  const nShap = (x.scenarios && x.scenarios.A && x.scenarios.A.n_test_samples)
+                || (x.scenarios && x.scenarios.B && x.scenarios.B.n_test_samples);
+  if (nTest != null) setEl("xai-test-size", (nTest / 1e6).toFixed(2) + " M");
+  if (nShap != null) setEl("xai-shap-size", (nShap / 1e3).toFixed(0) + " k");
+
+  // KG section: take counts from kg_sample.json schema totals so they stay in sync
+  const kg = STATE.kg && STATE.kg.schema && STATE.kg.schema.totals;
+  const fmtInt = n => n.toLocaleString("en-US");
+  if (kg) {
+    setEl("kg-stations", fmtInt(kg.Station));
+    setEl("kg-services", fmtInt(kg.TrainService));
+    setEl("kg-faults",   fmtInt(kg.FaultEvent));
+    setEl("kg-stops",    fmtInt(kg.STOPS_AT));
+    setEl("kg-adj",      fmtInt(kg.ADJACENT_TO));
+  }
+
+  // Map header: total with coords + FI missing
+  const meta = STATE.stationsMeta;
+  if (meta && meta.total_with_coords != null) {
+    setEl("map-n-coords", fmtInt(meta.total_with_coords));
+  }
+  if (meta && meta.missing_coords_per_country && meta.missing_coords_per_country.FI != null) {
+    setEl("map-n-fi-missing", fmtInt(meta.missing_coords_per_country.FI));
+  }
+}
+
 // ── Hero stats ─────────────────────────────────────────────────────────
 function hydrateHero() {
   const b = STATE.benchmark;
-  document.getElementById("stat-total").textContent = (16586834 / 1e6).toFixed(1) + " M";
+  document.getElementById("stat-total").textContent = (b.splits.total / 1e6).toFixed(1) + " M";
   document.getElementById("stat-test").textContent  = (b.splits.test / 1e6).toFixed(2) + " M";
   const xgbB = b.models.find(m => m.model === "xgb" && m.scenario === "B");
   document.getElementById("stat-best").textContent  = xgbB.test_pr_auc.toFixed(3);
   document.getElementById("stat-cause").textContent = "+46%";
-  document.getElementById("stat-kg").textContent    = "16.75 M";
+  // KG relationships = STOPS_AT (= total stops) + ADJACENT_TO 163,902 + REPORTED_AT 2,938
+  const kgRels = b.splits.total + 163902 + 2938;
+  document.getElementById("stat-kg").textContent    = (kgRels / 1e6).toFixed(2) + " M";
 }
 
 // ── Benchmark bar charts (A and B) ─────────────────────────────────────

@@ -9,7 +9,8 @@ bash scripts/download_data.sh   bash preprocess/run_all_notebooks.sh
 
 # 3. Unified store + benchmark + evaluation + SHAP (one chained command)
 python stop_level/preprocess_stops.py
-python stop_level/train_all.py --model logreg lgbm xgb graphsage --scenario both \
+python stop_level/train_all.py \
+    --model logreg lgbm xgb graphsage --scenario both \
   && python stop_level/evaluate.py \
   && python stop_level/xai_stops.py --scenario both --sample-frac 0.10
 
@@ -21,7 +22,7 @@ bash scripts/install_sparksee.sh && python stop_level/build_kg.py
 
 \paragraph{Wall-clock.} On a multi-core CPU host (GraphSAGE + KG on a Tesla~T4), end-to-end is $\sim$1.5\,h: Phase~1 (per-country preprocessing) 18\,min; Phase~2 (feature store) 17\,min; Phase~3 (model training) 30\,min; Phase~4 (SHAP + ablation, \SI{10}{\percent} sample) 24\,min; Sparksee KG 10\,min; cause classifier 20\,min.
 
-\paragraph{Artefact map.} After a full run the canonical consumables are: \texttt{Data/stops/stops\_\{train,val,test\}.parquet} (47 columns, scaled), \texttt{feature\_names\_\{A,B\}.json} (the contract), \texttt{scaler\_\{mean,scale\}\_\{A,B\}.npy} (inverse transform), \texttt{edge\_index.npy} + \texttt{edge\_attr.npy} (PyG-compatible station graph), \texttt{stop\_level/results/benchmark\_stops.json} (every metric table), \texttt{stop\_level/results/xai\_report\_stops.json} (SHAP global + 4 local explanations + lag-ablation + KG-bridge Cypher), and 22 figures under \texttt{stop\_level/figures/}.
+\paragraph{Artefact map.} After a full run the canonical consumables are: \texttt{\seqsplit{Data/stops/stops\_\{train,val,test\}.parquet}} (47 columns, scaled), \texttt{\seqsplit{feature\_names\_\{A,B\}.json}} (the contract), \texttt{\seqsplit{scaler\_\{mean,scale\}\_\{A,B\}.npy}} (inverse transform), \texttt{edge\_index.npy} + \texttt{edge\_attr.npy} (PyG-compatible station graph), \texttt{\seqsplit{stop\_level/results/benchmark\_stops.json}} (every metric table), \texttt{\seqsplit{stop\_level/results/xai\_report\_stops.json}} (SHAP global + 4 local explanations + lag-ablation + KG-bridge Cypher), and 22 figures under \texttt{stop\_level/figures/}.
 
 \subsection{Limitations}
 

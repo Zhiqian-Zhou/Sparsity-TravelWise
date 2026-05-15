@@ -5,22 +5,22 @@ The pipeline ingests open data from three operators that, despite covering simil
 
 \begin{table}[H]
     \centering
-    \caption{Per-country data sources and scale after Phase~1. All windows are 2024-01-01 to 2024-06-30. Stops are individual (service, station) rows; services are scheduled runs; stations are unique node IDs after deduplication. Italy contributes proportionally fewer stops because its source feed is restricted to long-distance services.}
+    \caption{Per-country data sources and scale after Phase~1. All windows are 2024-01-01 to 2024-06-30. Stops are individual (service, station) rows; services are scheduled runs; stations are unique node IDs after deduplication. Stops are reported in millions, services in thousands; exact counts: 16{,}600{,}169 stops, 1{,}559{,}006 services, 2{,}398 stations. Italy contributes proportionally fewer stops because its source feed is restricted to long-distance services.}
     \label{tab:data-sources}
     \small
-    \setlength{\tabcolsep}{6pt}
+    \setlength{\tabcolsep}{8pt}
     \begin{tabularx}{\textwidth}{l X
-        S[table-format=8.0,group-separator={,}]
-        S[table-format=7.0,group-separator={,}]
-        S[table-format=4.0,group-separator={,}]}
+        S[table-format=2.2, round-mode=places, round-precision=2]
+        S[table-format=4.1, round-mode=places, round-precision=1]
+        S[table-format=4.0, group-minimum-digits=4]}
         \toprule
-        Country & Source & {Stops} & {Services} & {Stations} \\
+        Country & Source & {Stops (M)} & {Services (k)} & {Stations} \\
         \midrule
-        Italy        & Trenitalia operations CSV~\cite{trenitalia2025figshare}                       & 2678291  & 344924  & 1397 \\
-        Finland      & FI-TW Kaggle~\cite{borin2025fitw} (FMI weather)                                 & 3112754  & 35687   & 451 \\
-        Netherlands  & RDT~\cite{rdt2024opendata} + Open-Meteo~\cite{zippenfenig2023openmeteo}         & 10809124 & 1178395 & 550 \\
+        Italy        & Trenitalia operations CSV~\cite{trenitalia2025figshare}                       &  2.68 &  344.9 & 1397 \\
+        Finland      & FI-TW Kaggle~\cite{borin2025fitw} (FMI weather)                                 &  3.11 &   35.7 &  451 \\
+        Netherlands  & RDT~\cite{rdt2024opendata} + Open-Meteo~\cite{zippenfenig2023openmeteo}         & 10.81 & 1178.4 &  550 \\
         \midrule
-        \textbf{Total} & ---                                                                          & 16600169 & 1559006 & 2398 \\
+        \textbf{Total} & ---                                                                          & 16.60 & 1559.0 & 2398 \\
         \bottomrule
     \end{tabularx}
 \end{table}

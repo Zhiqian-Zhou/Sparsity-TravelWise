@@ -24,8 +24,35 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+# ── Publication-quality styling (consistent across all evaluate.py figures) ──
+mpl.rcParams.update({
+    "figure.dpi": 150,
+    "savefig.dpi": 200,
+    "savefig.bbox": "tight",
+    "savefig.facecolor": "white",
+    "font.size": 11,
+    "axes.titlesize": 13,
+    "axes.titleweight": "bold",
+    "axes.labelsize": 11,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "xtick.labelsize": 10,
+    "ytick.labelsize": 10,
+    "legend.fontsize": 10,
+    "legend.frameon": False,
+    "lines.linewidth": 1.6,
+    "patch.edgecolor": "white",
+    "patch.linewidth": 0.6,
+})
+
+# Test-set positive rate for the random PR-AUC baseline reference line.
+PR_AUC_RANDOM_BASELINE = 0.087
 from sklearn.metrics import (
     average_precision_score, roc_auc_score,
     confusion_matrix, precision_recall_curve, roc_curve, f1_score,
@@ -180,17 +207,28 @@ def _bar_metrics_summary(rows: list[dict], scenario: str) -> None:
     if not sub:
         return
     metrics = ["pr_auc", "f1", "precision", "recall"]
-    fig, ax = plt.subplots(figsize=(11, 5))
+    fig, ax = plt.subplots(figsize=(12, 5.5))
     x = np.arange(len(metrics))
-    w = 0.8 / max(1, len(sub))
+    # Tighten group occupancy a touch (0.78) for slightly nicer between-group spacing.
+    w = 0.78 / max(1, len(sub))
     for i, r in enumerate(sub):
         vals = [r["test"][m] for m in metrics]
-        ax.bar(x + i*w - 0.4 + w/2, vals, w,
-                color=COLORS.get(r["model"], "#777"), label=r["model"])
+        offsets = x + i*w - 0.39 + w/2
+        bars = ax.bar(offsets, vals, w,
+                      color=COLORS.get(r["model"], "#777"),
+                      label=r["model"], edgecolor="white", linewidth=0.6)
+        # Value labels on top of each bar.
+        for bx, v in zip(offsets, vals):
+            ax.text(bx, v + 0.012, f"{v:.3f}",
+                    ha="center", va="bottom", fontsize=8, color="#222")
     ax.set_xticks(x); ax.set_xticklabels(metrics)
     ax.set_ylim(0, 1.05); ax.set_ylabel("score")
     ax.set_title(f"Metrics on test set — scenario {scenario}", fontweight="bold")
-    ax.legend()
+    # Random PR-AUC baseline (test-set positive rate ≈ 0.087).
+    ax.axhline(PR_AUC_RANDOM_BASELINE, color="#B71C1C", lw=1.2, ls="--",
+               alpha=0.7, label=f"random PR-AUC ≈ {PR_AUC_RANDOM_BASELINE:.3f}")
+    ax.legend(ncol=min(6, len(sub) + 1), loc="upper right")
+    ax.grid(axis="x", visible=False)
     plt.tight_layout()
     fig.savefig(FIG_DIR / f"metrics_summary_{scenario}.png", bbox_inches="tight")
     plt.close(fig)
@@ -207,16 +245,21 @@ def _pr_roc_grid(preds: dict) -> None:
             if y.sum() in (0, len(y)):
                 continue
             fpr, tpr, _ = roc_curve(y, p)
-            ax_roc.plot(fpr, tpr, color=COLORS.get(m, "#777"),
+            ax_roc.plot(fpr, tpr, color=COLORS.get(m, "#777"), lw=2.0,
                         label=f"{m} (AUC={roc_auc_score(y,p):.3f})")
             pre, rec, _ = precision_recall_curve(y, p)
-            ax_pr.plot(rec, pre, color=COLORS.get(m, "#777"),
+            ax_pr.plot(rec, pre, color=COLORS.get(m, "#777"), lw=2.0,
                        label=f"{m} (AP={average_precision_score(y,p):.3f})")
-        ax_roc.plot([0,1],[0,1],"k--",lw=1)
+        ax_roc.plot([0, 1], [0, 1], "k--", lw=1.2, alpha=0.6)
         ax_roc.set_title(f"ROC — scenario {scenario}", fontweight="bold")
-        ax_roc.set_xlabel("FPR"); ax_roc.set_ylabel("TPR"); ax_roc.legend(fontsize=9)
+        ax_roc.set_xlabel("FPR"); ax_roc.set_ylabel("TPR")
+        ax_roc.legend(fontsize=10, loc="lower right")
+        # Random PR-AUC baseline (= positive rate) on PR panel for context.
+        ax_pr.axhline(PR_AUC_RANDOM_BASELINE, color="#B71C1C", lw=1.2, ls="--",
+                       alpha=0.6, label=f"random ≈ {PR_AUC_RANDOM_BASELINE:.3f}")
         ax_pr.set_title(f"PR — scenario {scenario}", fontweight="bold")
-        ax_pr.set_xlabel("recall"); ax_pr.set_ylabel("precision"); ax_pr.legend(fontsize=9)
+        ax_pr.set_xlabel("recall"); ax_pr.set_ylabel("precision")
+        ax_pr.legend(fontsize=10, loc="upper right")
     plt.tight_layout()
     fig.savefig(FIG_DIR / "pr_roc_grid.png", bbox_inches="tight")
     plt.close(fig)
@@ -228,14 +271,23 @@ def _confusion_grid(preds: dict) -> None:
         return
     cols = min(5, n)
     rows_n = (n + cols - 1) // cols
-    fig, axes = plt.subplots(rows_n, cols, figsize=(3.2*cols, 3*rows_n), squeeze=False)
+    fig, axes = plt.subplots(rows_n, cols, figsize=(3.4*cols, 3.2*rows_n), squeeze=False)
     for k, ((m, s), df) in enumerate(preds.items()):
         ax = axes[k//cols, k%cols]
         cm = confusion_matrix(df["y_stop"], df["y_pred"])
-        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", cbar=False,
-                    xticklabels=["on-time","disrupted"],
-                    yticklabels=["on-time","disrupted"], ax=ax)
-        ax.set_title(f"{m} / {s}")
+        # Build per-cell labels: count plus row percentage.
+        row_totals = cm.sum(axis=1, keepdims=True).clip(min=1)
+        row_pct = cm / row_totals * 100
+        annot = np.array([[f"{cm[i, j]:,}\n({row_pct[i, j]:.1f}%)"
+                            for j in range(cm.shape[1])]
+                           for i in range(cm.shape[0])])
+        sns.heatmap(cm, annot=annot, fmt="", cmap="YlGnBu", cbar=False,
+                    annot_kws={"fontsize": 9},
+                    xticklabels=["on-time", "disrupted"],
+                    yticklabels=["on-time", "disrupted"], ax=ax,
+                    linewidths=0.4, linecolor="white")
+        ax.set_title(f"{m} / {s}", fontweight="bold")
+        ax.set_xlabel("predicted"); ax.set_ylabel("actual")
     for k in range(n, rows_n*cols):
         axes[k//cols, k%cols].axis("off")
     plt.tight_layout()
@@ -247,10 +299,10 @@ def _calibration_grid(preds: dict) -> None:
     """Reliability diagram. Reads the RAW probabilities (`p_disrupted_raw` if
     isotonic was applied, else `p_disrupted`) so the curve shows the true
     pre-calibration calibration of each model."""
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
     for i, scenario in enumerate(SCENARIOS):
         ax = axes[i]
-        ax.plot([0,1],[0,1],"k--",lw=1, label="perfect")
+        ax.plot([0, 1], [0, 1], "k--", lw=1.6, alpha=0.7, label="perfect")
         for (m, s), df in preds.items():
             if s != scenario:
                 continue
@@ -261,10 +313,14 @@ def _calibration_grid(preds: dict) -> None:
             if y.sum() in (0, len(y)):
                 continue
             p_true, p_pred = calibration_curve(y, p, n_bins=10, strategy="quantile")
-            ax.plot(p_pred, p_true, marker="o", color=COLORS.get(m,"#777"), label=m)
+            ax.plot(p_pred, p_true, color=COLORS.get(m, "#777"), lw=1.8, alpha=0.95)
+            ax.scatter(p_pred, p_true, s=42, color=COLORS.get(m, "#777"),
+                       edgecolor="white", linewidth=0.7, label=m, zorder=3)
         ax.set_title(f"Calibration — scenario {scenario}", fontweight="bold")
         ax.set_xlabel("predicted P"); ax.set_ylabel("empirical fraction")
-        ax.legend(fontsize=9)
+        ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+        ax.legend(fontsize=10, loc="lower right", frameon=True,
+                   facecolor="white", edgecolor="#CCCCCC")
     plt.tight_layout()
     fig.savefig(FIG_DIR / "calibration_grid.png", bbox_inches="tight")
     plt.close(fig)
@@ -272,7 +328,7 @@ def _calibration_grid(preds: dict) -> None:
 
 def _grouped_bar(preds: dict, group_col: str, fname: str, title: str) -> None:
     """Generic grouped bar: PR-AUC by group, one bar group per model, faceted by scenario."""
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
     for i, scenario in enumerate(SCENARIOS):
         ax = axes[i]
         rows = []
@@ -292,10 +348,22 @@ def _grouped_bar(preds: dict, group_col: str, fname: str, title: str) -> None:
             pd.DataFrame(rows).pivot(index="group", columns="model", values="pr_auc")
               .reindex(columns=MODELS)
         )
-        pivot.plot(kind="bar", ax=ax, color=[COLORS.get(c, "#777") for c in pivot.columns])
+        pivot.plot(kind="bar", ax=ax, width=0.82,
+                    color=[COLORS.get(c, "#777") for c in pivot.columns],
+                    edgecolor="white", linewidth=0.5)
         ax.set_title(f"{title} — scenario {scenario}", fontweight="bold")
         ax.set_ylim(0, 1.0); ax.set_ylabel("PR-AUC"); ax.set_xlabel(group_col)
-        ax.legend(fontsize=8)
+        # Random PR-AUC baseline.
+        ax.axhline(PR_AUC_RANDOM_BASELINE, color="#B71C1C", lw=1.0, ls="--",
+                    alpha=0.55)
+        # Rotate x labels 30° if labels are likely to overlap.
+        n_groups = pivot.shape[0]
+        if n_groups > 4 or any(len(str(g)) > 3 for g in pivot.index):
+            ax.tick_params(axis="x", rotation=30)
+            for lbl in ax.get_xticklabels():
+                lbl.set_ha("right")
+        ax.legend(fontsize=9, ncol=2, loc="upper right")
+        ax.grid(axis="x", visible=False)
     plt.tight_layout()
     fig.savefig(FIG_DIR / fname, bbox_inches="tight")
     plt.close(fig)
@@ -330,10 +398,19 @@ def _cascading_respect(preds: dict) -> None:
     if not rows:
         return
     rdf = pd.DataFrame(rows).set_index("model")
-    fig, ax = plt.subplots(figsize=(10, 5))
-    rdf.plot(kind="bar", ax=ax, color=["#E53935", "#90A4AE"])
+    fig, ax = plt.subplots(figsize=(10.5, 5.5))
+    rdf.plot(kind="bar", ax=ax, width=0.78,
+              color=["#E53935", "#90A4AE"],
+              edgecolor="white", linewidth=0.6)
     ax.set_title("Cascading respect — scenario B", fontweight="bold")
-    ax.set_ylim(0, 1.0); ax.set_ylabel("P(predicted disrupted)")
+    ax.set_ylim(0, 1.10); ax.set_ylabel("P(predicted disrupted)")
+    ax.tick_params(axis="x", rotation=0)
+    ax.grid(axis="x", visible=False)
+    # Value labels on top of each bar.
+    for container in ax.containers:
+        ax.bar_label(container, fmt="%.3f", padding=3, fontsize=9, color="#222")
+    # Legend above the bars to avoid overlap.
+    ax.legend(loc="upper right", ncol=2)
     plt.tight_layout()
     fig.savefig(FIG_DIR / "cascading_respect.png", bbox_inches="tight")
     plt.close(fig)

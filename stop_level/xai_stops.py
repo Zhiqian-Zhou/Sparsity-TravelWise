@@ -37,10 +37,34 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import seaborn as sns
 import shap
 from sklearn.metrics import average_precision_score
+
+# ── Publication-quality styling (consistent across all xai_stops figures) ──
+mpl.rcParams.update({
+    "figure.dpi": 150,
+    "savefig.dpi": 200,
+    "savefig.bbox": "tight",
+    "savefig.facecolor": "white",
+    "font.size": 11,
+    "axes.titlesize": 13,
+    "axes.titleweight": "bold",
+    "axes.labelsize": 11,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "xtick.labelsize": 10,
+    "ytick.labelsize": 10,
+    "legend.fontsize": 10,
+    "legend.frameon": False,
+    "lines.linewidth": 1.6,
+    "patch.edgecolor": "white",
+    "patch.linewidth": 0.6,
+})
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -128,14 +152,27 @@ def fig_global_bar(sv: np.ndarray, feat_cols: list[str], scenario: str,
     order = np.argsort(mean_abs)[::-1][:top_k]
     names = [feat_cols[i] for i in order]
     vals  = mean_abs[order]
-    fig, ax = plt.subplots(figsize=(9, 0.35*top_k + 1.5))
-    bars = ax.barh(names[::-1], vals[::-1], color="#E91E63")
-    for b, v in zip(bars, vals[::-1]):
-        ax.text(v, b.get_y() + b.get_height()/2, f" {v:.4f}",
-                va="center", fontsize=8)
+    fig, ax = plt.subplots(figsize=(10, 0.38*top_k + 1.6))
+    # Gradient by importance: deepest viridis = strongest feature (top of plot).
+    plotted_names = names[::-1]
+    plotted_vals  = vals[::-1]
+    cmap = mpl.colormaps["viridis"]
+    norm = mpl.colors.Normalize(vmin=0, vmax=max(1, len(plotted_vals) - 1))
+    colors = [cmap(norm(i)) for i in range(len(plotted_vals))]
+    bars = ax.barh(plotted_names, plotted_vals, color=colors,
+                    edgecolor="white", linewidth=0.5)
+    # Right-align value labels just past the bar end with a small fixed pad.
+    xmax = float(plotted_vals.max())
+    pad = xmax * 0.012
+    for b, v in zip(bars, plotted_vals):
+        ax.text(v + pad, b.get_y() + b.get_height()/2,
+                f"{v:.4f}", va="center", ha="left", fontsize=9, color="#222")
+    # Headroom for labels.
+    ax.set_xlim(0, xmax * 1.18)
     ax.set_title(f"Global SHAP importance — top {top_k} (scenario {scenario})",
                  fontweight="bold")
     ax.set_xlabel("mean |SHAP|")
+    ax.grid(axis="y", visible=False)
     plt.tight_layout()
     fig.savefig(FIG_DIR / f"global_summary_bar_{scenario}.png", bbox_inches="tight")
     plt.close(fig)
@@ -143,12 +180,18 @@ def fig_global_bar(sv: np.ndarray, feat_cols: list[str], scenario: str,
 
 
 def fig_beeswarm(sv: np.ndarray, X: np.ndarray, feat_cols: list[str], scenario: str) -> None:
-    plt.figure()
-    shap.summary_plot(sv, X, feature_names=feat_cols, show=False, max_display=15)
-    plt.title(f"SHAP beeswarm — scenario {scenario}", fontweight="bold")
-    plt.tight_layout()
-    plt.savefig(FIG_DIR / f"global_summary_beeswarm_{scenario}.png", bbox_inches="tight")
-    plt.close()
+    # shap.summary_plot creates its own figure; preset the desired size first
+    # so the resulting beeswarm has consistent proportions across scenarios.
+    prev_fs = plt.rcParams["figure.figsize"]
+    plt.rcParams["figure.figsize"] = (10, 6)
+    try:
+        shap.summary_plot(sv, X, feature_names=feat_cols, show=False, max_display=15)
+        plt.title(f"SHAP beeswarm — scenario {scenario}", fontweight="bold")
+        plt.tight_layout()
+        plt.savefig(FIG_DIR / f"global_summary_beeswarm_{scenario}.png", bbox_inches="tight")
+        plt.close()
+    finally:
+        plt.rcParams["figure.figsize"] = prev_fs
 
 
 def fig_by_group(sv: np.ndarray, df: pd.DataFrame, feat_cols: list[str],
@@ -170,12 +213,27 @@ def fig_by_group(sv: np.ndarray, df: pd.DataFrame, feat_cols: list[str],
     pivot = rdf.pivot_table(index="feature", columns="group",
                               values="mean_abs_shap", aggfunc="max").fillna(0)
     pivot = pivot.loc[pivot.sum(axis=1).sort_values(ascending=False).index].head(12)
-    fig, ax = plt.subplots(figsize=(11, 5.5))
-    pivot.plot(kind="bar", ax=ax, edgecolor="white")
+    n_groups = pivot.shape[1]
+    # Colormap-derived palette per group: tab10 for ≤10 groups, viridis for more.
+    if n_groups <= 10:
+        group_colors = [mpl.colormaps["tab10"](i % 10) for i in range(n_groups)]
+    else:
+        cmap = mpl.colormaps["viridis"]
+        group_colors = [cmap(i / max(1, n_groups - 1)) for i in range(n_groups)]
+    fig, ax = plt.subplots(figsize=(12, 5.8))
+    # `width=0.78` (down from default 0.5 for grouped bars) widens each cluster
+    # slightly while a sensible bar gap remains within each group.
+    pivot.plot(kind="bar", ax=ax, edgecolor="white", linewidth=0.5,
+                width=0.78, color=group_colors)
     ax.set_title(title, fontweight="bold")
     ax.set_ylabel("mean |SHAP|"); ax.set_xlabel("")
-    ax.tick_params(axis="x", rotation=40)
-    ax.legend(title=group_col, fontsize=9)
+    rot = 35 if n_groups > 4 else 30
+    ax.tick_params(axis="x", rotation=rot)
+    for lbl in ax.get_xticklabels():
+        lbl.set_ha("right")
+    ax.legend(title=group_col, fontsize=9, ncol=min(4, n_groups),
+               loc="upper right")
+    ax.grid(axis="x", visible=False)
     plt.tight_layout()
     fig.savefig(FIG_DIR / fname, bbox_inches="tight")
     plt.close(fig)
@@ -183,7 +241,16 @@ def fig_by_group(sv: np.ndarray, df: pd.DataFrame, feat_cols: list[str],
 
 def fig_local_waterfall(sv: np.ndarray, X: np.ndarray, feat_cols: list[str],
                          row_idx: int, base: float, title: str, fname: str) -> None:
-    """Waterfall chart for a single test row."""
+    """Waterfall chart for a single test row.
+
+    Cumulative arithmetic (verified):
+        For bar i with contribution v_i, the bar spans from
+            left_i = base + Σ_{j<i} v_j     (the running cumulative before bar i)
+        to  left_i + v_i = base + Σ_{j<=i} v_j   (the running cumulative after).
+        Thus negative bars sweep leftward and positive bars rightward, which is
+        exactly the standard SHAP-waterfall semantics. After all bars, the
+        running cumulative equals f(x) = base + Σ v_j.
+    """
     contrib = sv[row_idx]
     order = np.argsort(np.abs(contrib))[::-1]
     top = order[:12]
@@ -193,24 +260,39 @@ def fig_local_waterfall(sv: np.ndarray, X: np.ndarray, feat_cols: list[str],
     if len(others) > 0:
         items.append((f"+ {len(others)} other features", others_sum, 0.0))
 
-    fig, ax = plt.subplots(figsize=(9, 0.45*len(items) + 1.5))
+    # Compute cumulative left positions explicitly so the stacking is auditable.
+    contribs = [v for _, v, _ in items]
+    lefts: list[float] = []
     cum = base
-    y_pos = list(range(len(items)))
-    colors = ["#E53935" if v >= 0 else "#1E88E5" for _, v, _ in items]
-    bars = ax.barh([f"{n} ({v_raw:.2f})" for n, _, v_raw in items],
-                    [v for _, v, _ in items], left=[base + sum(x[1] for x in items[:i]) for i in range(len(items))],
-                    color=colors, edgecolor="white")
-    for b, (_, v, _) in zip(bars, items):
-        ax.text(b.get_x() + b.get_width()/2, b.get_y() + b.get_height()/2,
-                 f"{v:+.2f}", ha="center", va="center", fontsize=8)
-    ax.axvline(base, color="k", linestyle="--", lw=1, alpha=0.5,
+    for v in contribs:
+        lefts.append(cum)
+        cum += v
+    f_x = cum  # equals base + sum(contribs) by construction
+
+    fig, ax = plt.subplots(figsize=(10, 0.5*len(items) + 1.8))
+    # Red = pushes prediction up (toward "disrupted"); blue = pushes it down.
+    colors = ["#D32F2F" if v >= 0 else "#1976D2" for v in contribs]
+    labels = [f"{n} ({v_raw:.2f})" for n, _, v_raw in items]
+    bars = ax.barh(labels, contribs, left=lefts,
+                    color=colors, edgecolor="white", linewidth=0.6)
+    # In-bar magnitude labels: place at the midpoint of each bar (handles
+    # negative widths correctly because `get_x()` is the rectangle's lower-left
+    # and `get_width()` carries sign).
+    for b, v in zip(bars, contribs):
+        mid = b.get_x() + b.get_width() / 2.0
+        ax.text(mid, b.get_y() + b.get_height()/2,
+                 f"{v:+.2f}", ha="center", va="center", fontsize=8,
+                 color="white", fontweight="bold")
+    ax.axvline(base, color="k", linestyle="--", lw=1.2, alpha=0.55,
                label=f"E[f(x)] = {base:.2f}")
-    f_x = base + sum(v for _, v, _ in items)
-    ax.axvline(f_x, color="#43A047", linestyle="--", lw=1, alpha=0.7,
+    ax.axvline(f_x, color="#388E3C", linestyle="--", lw=1.4, alpha=0.85,
                 label=f"f(x) = {f_x:.2f}")
     ax.invert_yaxis()
     ax.set_title(title, fontweight="bold")
-    ax.legend(fontsize=9, loc="lower right")
+    ax.set_xlabel("model output (log-odds)")
+    ax.legend(fontsize=10, loc="lower right",
+               frameon=True, facecolor="white", edgecolor="#CCCCCC")
+    ax.grid(axis="y", visible=False)
     plt.tight_layout()
     fig.savefig(FIG_DIR / fname, bbox_inches="tight")
     plt.close(fig)
@@ -220,7 +302,7 @@ def fig_dependence_top5(sv: np.ndarray, X: np.ndarray, feat_cols: list[str]) -> 
     """SHAP dependence plots for the top 5 features."""
     mean_abs = np.abs(sv).mean(axis=0)
     top5 = np.argsort(mean_abs)[::-1][:5]
-    fig, axes = plt.subplots(1, 5, figsize=(20, 4.5))
+    fig, axes = plt.subplots(1, 5, figsize=(22, 4.8))
     for ax, fidx in zip(axes, top5):
         try:
             shap.dependence_plot(int(fidx), sv, X, feature_names=feat_cols,
@@ -228,9 +310,10 @@ def fig_dependence_top5(sv: np.ndarray, X: np.ndarray, feat_cols: list[str]) -> 
         except Exception as e:
             ax.text(0.5, 0.5, f"plot failed: {e}",
                      ha="center", va="center", transform=ax.transAxes)
-        ax.set_title(feat_cols[int(fidx)], fontsize=10)
-    plt.suptitle("SHAP dependence — top 5 features", fontweight="bold")
-    plt.tight_layout()
+        ax.set_title(feat_cols[int(fidx)], fontsize=11, fontweight="bold")
+    plt.suptitle("SHAP dependence — top 5 features",
+                 fontweight="bold", fontsize=14, y=1.02)
+    plt.tight_layout(w_pad=1.2)
     plt.savefig(FIG_DIR / "shap_dependence_top5.png", bbox_inches="tight")
     plt.close()
 
@@ -270,15 +353,24 @@ def lag_ablation(model_name: str, scenario: str) -> dict:
     pr_no_lag = float(average_precision_score(y, p_no_lag)) if y.sum() else 0.0
     delta = pr_full - pr_no_lag
 
-    fig, ax = plt.subplots(figsize=(7, 4.5))
-    ax.bar(["with lag features", "no lag features"],
-            [pr_full, pr_no_lag], color=["#1E88E5", "#90A4AE"])
+    fig, ax = plt.subplots(figsize=(8, 5.2))
+    bars = ax.bar(["with lag features", "no lag features"],
+                   [pr_full, pr_no_lag], width=0.55,
+                   color=["#1E88E5", "#90A4AE"],
+                   edgecolor="white", linewidth=0.8)
     for x, v in zip([0, 1], [pr_full, pr_no_lag]):
-        ax.text(x, v + 0.01, f"{v:.3f}", ha="center")
-    ax.set_ylim(0, 1)
+        ax.text(x, v + 0.018, f"{v:.3f}", ha="center", va="bottom",
+                 fontsize=11, fontweight="bold", color="#222")
+    ax.set_ylim(0, max(pr_full, pr_no_lag) * 1.18 + 0.05)
     ax.set_ylabel("test PR-AUC")
-    ax.set_title(f"Lag-feature ablation — {model_name} / {scenario}\n"
-                  f"Δ PR-AUC = {delta:+.3f}", fontweight="bold")
+    ax.set_title(f"Lag-feature ablation — {model_name} / {scenario}",
+                  fontweight="bold")
+    # Larger delta sub-annotation directly below the title.
+    ax.text(0.5, 1.01, f"Δ PR-AUC = {delta:+.3f}",
+             transform=ax.transAxes, ha="center", va="bottom",
+             fontsize=14, fontweight="bold",
+             color="#388E3C" if delta >= 0 else "#D32F2F")
+    ax.grid(axis="x", visible=False)
     plt.tight_layout()
     fig.savefig(FIG_DIR / "lag_ablation.png", bbox_inches="tight")
     plt.close(fig)
@@ -307,24 +399,31 @@ def scenario_uplift_map(model_name_A: str, model_name_B: str) -> dict | None:
     m = a.merge(b, on=["service_id", "stop_order"], how="inner")
     m["uplift"] = m["p_B"] - m["p_A"]
 
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(11, 5.5))
     sample = m.sample(min(20_000, len(m)), random_state=42)
-    ax.scatter(sample["position_norm"], sample["uplift"],
-                c=sample["y_stop"], cmap="coolwarm", alpha=0.5, s=8)
+    sc = ax.scatter(sample["position_norm"], sample["uplift"],
+                     c=sample["y_stop"], cmap="coolwarm",
+                     alpha=0.4, s=10, edgecolor="none")
     # bin means
     bins = np.linspace(0, 1, 11)
     centres = 0.5 * (bins[:-1] + bins[1:])
     bin_means = [m.loc[(m["position_norm"] >= bins[i]) &
                         (m["position_norm"] <  bins[i+1]), "uplift"].mean()
                   for i in range(len(centres))]
-    ax.plot(centres, bin_means, color="#FF6F00", lw=2, marker="o",
-             label="bin mean uplift")
-    ax.axhline(0, color="k", lw=1, ls="--", alpha=0.5)
+    ax.plot(centres, bin_means, color="#FF6F00", lw=2.5, marker="o",
+             markersize=7, markeredgecolor="white", markeredgewidth=0.8,
+             label="bin mean uplift", zorder=5)
+    ax.axhline(0, color="k", lw=1.4, ls="--", alpha=0.6, zorder=2)
     ax.set_xlabel("position_norm (origin → terminus)")
     ax.set_ylabel("P_B − P_A")
     ax.set_title(f"Scenario uplift map ({model_name_B}/B − {model_name_A}/A)",
                   fontweight="bold")
-    ax.legend()
+    ax.legend(loc="upper left",
+               frameon=True, facecolor="white", edgecolor="#CCCCCC")
+    # Colorbar legend for the y_stop coloring (binary on-time/disrupted).
+    cbar = fig.colorbar(sc, ax=ax, ticks=[0, 1], pad=0.02, fraction=0.04)
+    cbar.set_label("y_stop (0 = on-time, 1 = disrupted)", fontsize=10)
+    cbar.ax.set_yticklabels(["0", "1"])
     plt.tight_layout()
     fig.savefig(FIG_DIR / "scenario_uplift_map.png", bbox_inches="tight")
     plt.close(fig)

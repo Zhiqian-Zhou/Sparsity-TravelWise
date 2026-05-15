@@ -19,6 +19,9 @@
 \usepackage{graphicx}
 \usepackage{subcaption}
 \usepackage{float}
+% Break long monospace identifiers (Maven coords, snake_case column lists)
+% inside \texttt{} via \seqsplit{...}.
+\usepackage{seqsplit}
 \usepackage{caption}
 \captionsetup[figure]{font=small, labelfont=bf, justification=raggedright,
                        singlelinecheck=false}
@@ -29,9 +32,12 @@
 \usepackage{booktabs}
 \usepackage{array, tabularx}
 \usepackage{siunitx}
+% round-mode=none: \num{x} renders x verbatim with thousand-separator grouping
+% only — no ".000" padding on plain integers in prose. Per-cell rounding can
+% still be turned on inside individual S columns when needed.
 \sisetup{detect-weight=true, detect-family=true,
           group-separator={,}, group-minimum-digits=4,
-          round-mode=places, round-precision=3}
+          round-mode=none}
 
 % Bibliography
 \usepackage[numbers, sort&compress, square]{natbib}

@@ -51,12 +51,14 @@ def write_json(path, data, indent=None):
 # ── 1. Headline metrics + per-country/per-position breakdown ──────────────────
 print("[1/6] Baking benchmark.json ...")
 b = json.load(open(ROOT / "stop_level" / "results" / "benchmark_stops.json"))
+manifest = json.load(open(ROOT / "Data" / "stops" / "manifest_stops.json"))
+splits_m = manifest["splits"]
 out = {
     "splits": {
-        "train": 11_915_114,
-        "val":   2_368_484,
-        "test":  2_303_236,
-        "total": 16_586_834,
+        "train": int(splits_m["train"]["rows"]),
+        "val":   int(splits_m["val"]["rows"]),
+        "test":  int(splits_m["test"]["rows"]),
+        "total": int(manifest["n_stops_total"]),
     },
     "models": [],
     "by_country":     {},
@@ -105,32 +107,42 @@ write_json(OUT / "xai.json", xai, indent=2)
 
 # ── 3. Cause prediction v1 vs v2 ──────────────────────────────────────────────
 print("[3/6] Baking causes.json ...")
-v1_b = json.load(open(ROOT / "stop_level" / "results" / "cause_benchmark.json"))
-v2_b = json.load(open(ROOT / "stop_level" / "results" / "cause_benchmark_v2.json"))
-v1_t = json.load(open(ROOT / "stop_level" / "results" / "cause_transfer.json"))
-v2_t = json.load(open(ROOT / "stop_level" / "results" / "cause_transfer_v2.json"))
-causes = {
-    "classes": v1_b["classes"],
-    "v1": {
-        "models": {k: {"val_macro_f1": v["val_macro_f1"],
-                        "test_macro_f1": v["test_macro_f1"],
-                        "val_acc": v["val_accuracy"],
-                        "test_acc": v["test_accuracy"],
-                        "test_per_class_f1": v["test_per_class_f1"]}
-                  for k, v in v1_b["models"].items()},
-        "transfer": v1_t["by_country"],
-    },
-    "v2": {
-        "models": {k: {"val_macro_f1": v["val_macro_f1"],
-                        "test_macro_f1": v["test_macro_f1"],
-                        "val_acc": v["val_accuracy"],
-                        "test_acc": v["test_accuracy"],
-                        "test_per_class_f1": v["test_per_class_f1"]}
-                  for k, v in v2_b["models"].items()},
-        "transfer": v2_t["by_country"],
-    },
+cause_inputs = {
+    "v1_b": ROOT / "stop_level" / "results" / "cause_benchmark.json",
+    "v2_b": ROOT / "stop_level" / "results" / "cause_benchmark_v2.json",
+    "v1_t": ROOT / "stop_level" / "results" / "cause_transfer.json",
+    "v2_t": ROOT / "stop_level" / "results" / "cause_transfer_v2.json",
 }
-write_json(OUT / "causes.json", causes, indent=2)
+if all(p.exists() for p in cause_inputs.values()):
+    v1_b = json.load(open(cause_inputs["v1_b"]))
+    v2_b = json.load(open(cause_inputs["v2_b"]))
+    v1_t = json.load(open(cause_inputs["v1_t"]))
+    v2_t = json.load(open(cause_inputs["v2_t"]))
+    causes = {
+        "classes": v1_b["classes"],
+        "v1": {
+            "models": {k: {"val_macro_f1": v["val_macro_f1"],
+                            "test_macro_f1": v["test_macro_f1"],
+                            "val_acc": v["val_accuracy"],
+                            "test_acc": v["test_accuracy"],
+                            "test_per_class_f1": v["test_per_class_f1"]}
+                      for k, v in v1_b["models"].items()},
+            "transfer": v1_t["by_country"],
+        },
+        "v2": {
+            "models": {k: {"val_macro_f1": v["val_macro_f1"],
+                            "test_macro_f1": v["test_macro_f1"],
+                            "val_acc": v["val_accuracy"],
+                            "test_acc": v["test_accuracy"],
+                            "test_per_class_f1": v["test_per_class_f1"]}
+                      for k, v in v2_b["models"].items()},
+            "transfer": v2_t["by_country"],
+        },
+    }
+    write_json(OUT / "causes.json", causes, indent=2)
+else:
+    missing = [p.name for p in cause_inputs.values() if not p.exists()]
+    print(f"  skipped: cause result files not present ({', '.join(missing)}); keeping existing causes.json")
 
 
 # ── 4. Stations: lat/lon + degree + avg_delay (full set, lightly filtered) ────
@@ -311,8 +323,12 @@ kg_sample = {
              "fields": []},
         ],
         "totals": {
-            "Station": 2397, "TrainService": 1217406, "FaultEvent": 2938,
-            "STOPS_AT": 16586834, "ADJACENT_TO": 163902, "REPORTED_AT": 2938,
+            "Station":      int(manifest["n_stations"]),
+            "TrainService": int(manifest["n_services"]),
+            "FaultEvent":   2938,
+            "STOPS_AT":     int(manifest["n_stops_total"]),
+            "ADJACENT_TO":  int(manifest["n_edges"]),
+            "REPORTED_AT":  2938,
         },
     },
     "sample": {
@@ -422,11 +438,14 @@ cause_data["classes"] = [
     "rolling stock", "infrastructure", "external", "accidents",
     "logistical", "engineering work", "staff", "weather", "unknown"
 ]
-# Per-country distributions from cause_transfer_v2
-v2_t = json.load(open(ROOT / "stop_level" / "results" / "cause_transfer_v2.json"))
-cause_data["transfer"] = v2_t
-write_json(OUT / "cause_play.json", cause_data)
-print(f"  Total NL/IT/FI cause samples written")
+# Per-country distributions from cause_transfer_v2 (skip if not regenerated)
+v2_t_path = ROOT / "stop_level" / "results" / "cause_transfer_v2.json"
+if v2_t_path.exists():
+    cause_data["transfer"] = json.load(open(v2_t_path))
+    write_json(OUT / "cause_play.json", cause_data)
+    print(f"  Total NL/IT/FI cause samples written")
+else:
+    print(f"  skipped cause_play.json: {v2_t_path.name} not present; keeping existing file")
 
 
 # ── 5c. Routes for the disruption prediction page ─────────────────────────────
