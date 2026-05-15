@@ -553,3 +553,108 @@ the full set of artefacts listed above.
 - **Knowledge Graph schema** (Sparksee): see the `kg_bridge_query` template
   in `xai_report_stops.json` and the `kg_compatibility` block of
   `manifest_stops.json` for the import format.
+
+---
+
+## 15. Future work
+
+The current pipeline saturates near PR-AUC `0.94` in scenario B and the
+GraphSAGE backbone — which uses only the station-adjacency slice of the
+KG — does not exceed the tabular GBDT. To make a future iteration
+meaningfully stronger, and to turn the KG into a learning substrate rather
+than just an explanation layer, we propose three coordinated steps.
+
+### 15.1 Obtain a full-year Italian dataset, comparable to FI-TW
+
+
+The recommended next step is to **assemble a comparable 12-month Italian
+corpus following the methodology of Borin et al. (2025), *FI-TW: a Finnish
+train-weather integrated dataset*, Scientific Data 12**
+([nature.com/articles/s41597-025-06385-8](https://www.nature.com/articles/s41597-025-06385-8)).
+
+
+
+### 15.2 Enrich the database with synthetic but operationally faithful data
+
+
+
+Targeted **synthetic augmentation** can help, provided it is grounded in
+real operational physics rather than generic SMOTE-style oversampling:
+
+1. **Counterfactual disruption pairs.** For every observed disrupted stop,
+   take a matched on-time stop at the same station, same hour, same train
+   class on a different day. Feed both as a contrastive pair to teach the
+   model *what changed* (typically the weather differential or the lag
+   rate).
+2. **Adversarial weather scenarios.** Inject realistic extreme-weather
+   sequences (NL with sub-zero winters, IT with heat-induced track
+   buckling) using worldwide historical percentiles. Audit whether
+   predicted causes shift accordingly; failure to do so flags the
+   class-mass-collapse path the current model has on cross-country
+   transfer.
+3. **Schedule-perturbation augmentation.** Sample plausible timetable
+   variants (different `stop_order`, swapped intermediate stations,
+   compressed dwell times) holding the rest of the (service, station,
+   weather) tuple constant. Trains the model to be position-invariant
+   where it should be.
+4. **Cross-country cause synthesis.** Apply per-country mean-variance
+   alignment (CORAL or a simpler standardisation) to map Dutch cause
+   distributions onto Italian / Finnish operational contexts, generating
+   pseudo-labelled examples for fine-tuning.
+
+The synthetic data is **not** a replacement for the real Italian year
+(§15.1) — it is the layer on top that lets rare classes be learned and
+lets the model see operational regimes that the historical record
+under-samples.
+
+### 15.3 Redesign the Knowledge Graph as a learning substrate
+
+The current Sparksee KG has 3 node types (`Station`, `TrainService`,
+`FaultEvent`) and 3 edge types (`STOPS_AT`, `ADJACENT_TO`, `REPORTED_AT`).
+GraphSAGE consumes only the station-adjacency slice, so the GNN never
+reads the most informative parts of the graph. With a richer schema and a
+heterogeneous GNN, the KG can become a first-class predictor rather than
+an aside.
+
+Proposed extensions:
+
+1. **New entity types**
+   - `RollingStock` — physical train unit with maintenance history, age,
+     km since last overhaul, manufacturer.
+   - `CrewShift` — operator, hours into shift, days since last rest.
+   - `EngineeringWork` — planned-work entities with affected stations and
+     date windows.
+   - `Connection` — booked passenger transfers between adjacent services.
+
+2. **New relation types**
+   - `OPERATED_BY`: `TrainService → RollingStock`
+   - `STAFFED_BY`: `TrainService → CrewShift`
+   - `AFFECTED_BY`: `Station → EngineeringWork`
+   - `CONNECTS_TO`: `TrainService → TrainService` (transfer-pair edges
+     enabling cascading-delay propagation predictions across services,
+     not just within a single run)
+   - `PARALLEL_TO`: `Station → Station` (track parallelism / overtaking
+     possibilities)
+
+3. **Temporal edge attributes**
+   - `STOPS_AT` already carries scheduled times; extend with
+     `actual_arrival_ts`, `dwell_seconds`, `headway_to_next_train_at_stop`
+     so the same edge type encodes both schedule and execution.
+
+4. **A heterogeneous GNN as the learning model**
+   - Move from plain GraphSAGE on a single homogeneous adjacency graph to
+     a relational GNN (R-GCN, HAN, or a Heterogeneous Graph Transformer)
+     that processes each relation type with its own message-passing
+     kernel.
+   - Pre-train on a self-supervised link-prediction objective over the
+     full schema before fine-tuning on the disruption-classification
+     head. This is the standard recipe by which KG-native models exceed
+     feature-based tabular baselines.
+
+5. **Unify predictor and explainer in one model**
+   - Once the KG is the substrate for both training *and* explanation,
+     the SHAP report and the bridge query share a single embedding space:
+     "explain prediction X" returns a sub-graph whose attention weights
+     *are* the attribution values — end-to-end consistent rather than
+     stitched together post-hoc.
+
