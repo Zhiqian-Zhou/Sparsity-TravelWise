@@ -81,6 +81,8 @@ async function loadAll() {
   drawCauseCharts();
   drawMap();
   wirePredict();
+  drawKgPreview();
+  wireKgPreview();
 }
 
 // ── XAI cards: lag-ablation deltas + scenario-uplift figures (from xai.json)
@@ -1191,6 +1193,169 @@ function escapeHtml(s) {
   return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
+
+// ── KG preview (embedded Cytoscape sample subgraph) ───────────────────
+const KG_KIND_COLOR  = { Station: "#1E88E5", TrainService: "#43A047", FaultEvent: "#E53935" };
+const KG_KIND_SHAPE  = { Station: "ellipse", TrainService: "round-rectangle", FaultEvent: "diamond" };
+const KG_REL_COLOR   = { STOPS_AT: "#43A047", ADJACENT_TO: "#06B6D4", REPORTED_AT: "#E53935" };
+const KG_COUNTRY_FLAG = { IT: "🇮🇹", FI: "🇫🇮", NL: "🇳🇱" };
+
+function _kgEscapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+function _kgShortLabel(n) {
+  if (n.kind === "Station")      return n.id.replace(/^[A-Z]{2}_/, "");
+  if (n.kind === "TrainService") return "🚆";
+  if (n.kind === "FaultEvent")   return "⚠";
+  return n.id;
+}
+
+function _kgBuildElements(country) {
+  if (!STATE.kg || !STATE.kg.sample) return [];
+  const elements = [];
+  const visible  = new Set();
+  for (const n of STATE.kg.sample.nodes) {
+    if (country && n.country && n.country !== country) continue;
+    elements.push({ data: {
+      id: n.id,
+      label: _kgShortLabel(n),
+      kind: n.kind,
+      color: KG_KIND_COLOR[n.kind] || "#888",
+      shape: KG_KIND_SHAPE[n.kind] || "ellipse",
+      meta: n,
+      isHub: !!n.is_hub,
+      country: n.country || "",
+    }});
+    visible.add(n.id);
+  }
+  for (const e of STATE.kg.sample.edges) {
+    if (!visible.has(e.source) || !visible.has(e.target)) continue;
+    elements.push({ data: {
+      id: `${e.source}->${e.target}-${e.kind}`,
+      source: e.source, target: e.target,
+      kind: e.kind, label: e.kind,
+      color: KG_REL_COLOR[e.kind] || "#94a3b8",
+    }});
+  }
+  return elements;
+}
+
+function drawKgPreview(country = "") {
+  const container = document.getElementById("kg-preview");
+  if (!container || typeof cytoscape === "undefined") return;
+  if (STATE.kgPreviewCy) STATE.kgPreviewCy.destroy();
+
+  const elements = _kgBuildElements(country);
+  const cy = cytoscape({
+    container, elements,
+    style: [
+      { selector: "node", style: {
+        "background-color": "data(color)",
+        "background-opacity": 0.92,
+        "shape": "data(shape)",
+        "border-width": 1.5,
+        "border-color": "data(color)",
+        "border-opacity": 0.9,
+        "width": 22, "height": 22,
+        "transition-property": "border-width, opacity",
+        "transition-duration": 150,
+      }},
+      { selector: "node[?isHub]", style: {
+        "width": 38, "height": 38,
+        "border-width": 3, "border-color": "#a78bfa",
+        "background-opacity": 1,
+      }},
+      { selector: "node[kind='TrainService']", style: { "width": 26, "height": 16 }},
+      { selector: "node[kind='FaultEvent']",   style: { "width": 20, "height": 20 }},
+      { selector: "node:selected, node.kg-hover", style: {
+        "border-width": 3, "border-color": "#fbbf24",
+      }},
+      { selector: "edge", style: {
+        "curve-style": "bezier",
+        "target-arrow-shape": "triangle",
+        "target-arrow-color": "data(color)",
+        "line-color": "data(color)",
+        "width": 1, "opacity": 0.55,
+        "transition-property": "opacity, width",
+        "transition-duration": 150,
+      }},
+      { selector: "edge[kind='ADJACENT_TO']", style: {
+        "line-style": "dashed", "line-dash-pattern": [4, 3],
+        "opacity": 0.5,
+      }},
+      { selector: "edge.kg-hover-edge", style: { "width": 2.5, "opacity": 1 }},
+      { selector: ".kg-dim", style: { "opacity": 0.08 }},
+    ],
+    layout: { name: "cose", animate: true, animationDuration: 600,
+               idealEdgeLength: 90, padding: 24,
+               nodeRepulsion: 6000, edgeElasticity: 100, randomize: false },
+    minZoom: 0.2, maxZoom: 4,
+    wheelSensitivity: 0.18,
+    boxSelectionEnabled: false,
+  });
+  STATE.kgPreviewCy = cy;
+
+  cy.on("mouseover", "node", (evt) => {
+    const n = evt.target;
+    cy.elements().addClass("kg-dim");
+    n.removeClass("kg-dim").addClass("kg-hover");
+    n.connectedEdges().removeClass("kg-dim").addClass("kg-hover-edge");
+    n.neighborhood("node").removeClass("kg-dim");
+  });
+  cy.on("mouseout", "node", () => {
+    cy.elements().removeClass("kg-dim kg-hover kg-hover-edge");
+  });
+  cy.on("tap", "node", (evt) => _kgRenderInspector(evt.target.data()));
+  cy.on("tap", "edge", (evt) => _kgRenderInspector(evt.target.data()));
+}
+
+function _kgRenderInspector(d) {
+  const el = document.getElementById("kg-preview-detail");
+  if (!el) return;
+  if (d.source && d.target) {
+    el.innerHTML = `
+      <strong>Relationship</strong>
+      <span class="kg-pill ${d.kind.toLowerCase()}">${d.kind}</span>
+      <span class="muted">${d.source} → ${d.target}</span>`;
+    return;
+  }
+  const m = d.meta || {};
+  let body = "";
+  if (d.kind === "Station") {
+    body = `
+      <code>${m.id}</code> · ${KG_COUNTRY_FLAG[m.country] || "🌍"} ${m.country}
+      ${m.is_hub ? `<span class="kg-pill" style="background:color-mix(in srgb,#a78bfa 22%,transparent);color:#a78bfa">hub</span>` : ""}
+      <br><span class="muted">lat ${m.lat ?? "—"}, lon ${m.lon ?? "—"} · degree ${m.degree ?? "—"} · avg delay ${m.delay ?? "—"} min</span>`;
+  } else if (d.kind === "TrainService") {
+    body = `<code>${m.id}</code> · ${KG_COUNTRY_FLAG[m.country] || "🌍"} ${m.country}
+      <br><span class="muted">Sample TrainService visiting one of the hub stations.</span>`;
+  } else if (d.kind === "FaultEvent") {
+    body = `<code>${m.id}</code> · ${m.date}
+      <br><span class="muted">${_kgEscapeHtml(m.description)}</span>`;
+  } else {
+    body = `<code>${m.id || d.label}</code>`;
+  }
+  el.innerHTML = `<span class="kg-pill ${d.kind.toLowerCase()}">${d.kind}</span> ${body}`;
+}
+
+function wireKgPreview() {
+  const tabs = document.getElementById("kg-preview-country-tabs");
+  if (!tabs) return;
+  tabs.addEventListener("click", (e) => {
+    if (e.target.dataset.country === undefined) return;
+    tabs.querySelectorAll("button").forEach(b => b.classList.remove("active"));
+    e.target.classList.add("active");
+    drawKgPreview(e.target.dataset.country);
+  });
+}
+
+// Keep the embedded preview correctly sized when the window resizes.
+window.addEventListener("resize", () => {
+  if (STATE.kgPreviewCy) STATE.kgPreviewCy.resize();
+});
 
 // ── Boot ────────────────────────────────────────────────────────────────
 // Kick off both fetch waves in parallel — the cause-play 3 MB JSON used to

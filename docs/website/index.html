@@ -398,11 +398,26 @@
     <div class="metric success card"><div class="v">7.7 ms</div><div class="l">Bridge query (Sparksee)</div></div>
   </div>
 
-  <div class="card" style="margin-top:24px;text-align:center;padding:32px">
-    <h3>🌐 Explore the full Knowledge Graph</h3>
-    <p class="muted">Interactive Cytoscape visualisation with fcose layout, search, type filters,
-      neighbour-dimming, and a property inspector — on its own dedicated page.</p>
-    <a href="kg.html" class="btn" style="margin-top:8px;display:inline-block">Open the KG explorer →</a>
+  <div class="card" style="margin-top:24px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:8px">
+      <div>
+        <h3 style="margin:0">🌐 Sample subgraph preview</h3>
+        <p class="muted" style="margin:4px 0 0 0">Hub stations (purple ring) + 1-hop neighbours + sample TrainServices and FaultEvents from the live KG. Drag to pan, scroll to zoom, click a node to inspect.</p>
+      </div>
+      <div class="tabs" id="kg-preview-country-tabs" style="margin:0">
+        <button data-country="" class="active">All</button>
+        <button data-country="IT">🇮🇹 IT</button>
+        <button data-country="FI">🇫🇮 FI</button>
+        <button data-country="NL">🇳🇱 NL</button>
+      </div>
+    </div>
+    <div id="kg-preview" class="kg-graph" role="region" aria-label="Embedded KG preview"></div>
+    <div class="kg-detail" id="kg-preview-detail">
+      <span class="muted">— click any node or edge to inspect its properties.</span>
+    </div>
+    <div style="margin-top:14px;text-align:center">
+      <a href="kg.html" class="btn">Open the full KG explorer (search, filters, layout switcher) →</a>
+    </div>
   </div>
 
   <div class="card" style="margin-top:24px">
