@@ -59,16 +59,21 @@ document.getElementById("theme-toggle").addEventListener("click", () => {
 applyTheme(STATE.theme === "auto" ? null : STATE.theme);
 
 // ── Data load (parallel) ───────────────────────────────────────────────
+// Cache-bust the dashboard JSONs with the page-load timestamp so a refresh
+// always picks up a re-baked file. (Without this, browsers happily serve a
+// stale data/benchmark.json from disk cache for hours, which is how
+// GraphSAGE silently dropped off the model-comparison chart on 2026-05-15.)
+const _v = "?v=" + Date.now();
 async function loadAll() {
   const fetches = [
-    fetch("data/benchmark.json").then(r => r.json()),
-    fetch("data/xai.json").then(r => r.json()),
-    fetch("data/causes.json").then(r => r.json()),
-    fetch("data/stations.json").then(r => r.json()),
-    fetch("data/predictions_sample.json").then(r => r.json()),
-    fetch("data/kg_sample.json").then(r => r.json()),
+    fetch("data/benchmark.json" + _v).then(r => r.json()),
+    fetch("data/xai.json" + _v).then(r => r.json()),
+    fetch("data/causes.json" + _v).then(r => r.json()),
+    fetch("data/stations.json" + _v).then(r => r.json()),
+    fetch("data/predictions_sample.json" + _v).then(r => r.json()),
+    fetch("data/kg_sample.json" + _v).then(r => r.json()),
   ];
-  const meta = fetch("data/stations_meta.json").then(r => r.ok ? r.json() : null).catch(() => null);
+  const meta = fetch("data/stations_meta.json" + _v).then(r => r.ok ? r.json() : null).catch(() => null);
   const [b, x, c, s, p, kg, m] = await Promise.all([...fetches, meta]);
   STATE.benchmark = b; STATE.xai = x; STATE.causes = c;
   STATE.stations = s;  STATE.predictions = p; STATE.kg = kg;

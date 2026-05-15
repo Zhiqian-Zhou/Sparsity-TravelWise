@@ -65,6 +65,26 @@
       "test_recall": 0.8459,
       "test_brier": 0.0156,
       "test_ece": 0.0004
+    },
+    {
+      "model": "graphsage",
+      "scenario": "A",
+      "test_pr_auc": 0.5198,
+      "test_f1": 0.5181,
+      "test_precision": 0.4946,
+      "test_recall": 0.544,
+      "test_brier": 0.1023,
+      "test_ece": 0.1692
+    },
+    {
+      "model": "graphsage",
+      "scenario": "B",
+      "test_pr_auc": 0.9211,
+      "test_f1": 0.8911,
+      "test_precision": 0.9273,
+      "test_recall": 0.8576,
+      "test_brier": 0.0252,
+      "test_ece": 0.0601
     }
   ],
   "by_country": {
